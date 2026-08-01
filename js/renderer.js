@@ -86,14 +86,14 @@ const R = {
     }
   },
 
-  /* 소품 버퍼(PBuf)를 앵커 기준으로 그린다 */
-  drawProp(p, x, y) {
+  /* 소품 버퍼(PBuf)를 앵커 기준으로 그린다. mul 로 전체를 어둡게 할 수 있다. */
+  drawProp(p, x, y, mul = 1) {
     const w = p.w, h = p.h, ax = x - p.ax, ay = y - p.ay;
     for (let sy = 0; sy < h; sy++) {
       const row = sy * w;
       for (let sx = 0; sx < w; sx++) {
         if (!p.a[sx + row]) continue;
-        this.px(ax + sx, ay + sy, p.lum[sx + row]);
+        this.px(ax + sx, ay + sy, p.lum[sx + row] * mul);
       }
     }
   },

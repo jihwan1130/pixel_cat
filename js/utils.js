@@ -57,7 +57,24 @@ const Narrator = {
   SPEED: 26,          // 초당 글자수
   HOLD_AFTER: 1.7,    // 한 줄 다 쓴 뒤 대기(초)
 
-  init() { this.el = document.getElementById('narration'); },
+  init() {
+    this.el = document.getElementById('narration');
+    this.fel = document.getElementById('flash');
+  },
+
+  /* 진행을 막지 않는 한 줄. 수색 결과처럼 흐름을 끊으면 안 되는 문장에 쓴다. */
+  flash(text, opt = {}) {
+    if (!this.fel) return;
+    this.fel.textContent = text;
+    this.fel.className = 'on' + (opt.bad ? ' bad' : '');
+    clearTimeout(this._flashT);
+    this._flashT = setTimeout(() => { this.fel.className = ''; }, (opt.dur || 3.6) * 1000);
+  },
+
+  clearFlash() {
+    clearTimeout(this._flashT);
+    if (this.fel) this.fel.className = '';
+  },
 
   say(lines, onDone) {
     this.lines = Array.isArray(lines) ? lines.slice() : [lines];

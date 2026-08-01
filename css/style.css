@@ -80,6 +80,24 @@ html, body {
 }
 #stage-title.on { opacity: .92; }
 
+/* ---- 수색 결과 한 줄 (진행을 막지 않는다) ---- */
+#flash {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 13%;
+  text-align: center;
+  font-size: clamp(11px, 1.5vw, 20px);
+  line-height: 1.7;
+  letter-spacing: .05em;
+  color: #dcdcdc;
+  text-shadow: 0 0 12px rgba(255,255,255,.2);
+  opacity: 0;
+  transition: opacity .45s ease;
+}
+#flash.on { opacity: 1; }
+#flash.bad { color: #fff; text-shadow: 0 0 18px rgba(255,255,255,.45); }
+
 /* ---- 하단 힌트(E) ---- */
 #hint {
   position: absolute;

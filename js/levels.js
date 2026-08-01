@@ -55,6 +55,7 @@ const LEVEL_DEF = {
   /* ===================== 골목 (1) ===================== */
   alley: {
     theme: 'alley', W: 46, H: 32, fill: TT.WALL, windows: true,
+    mins: { trace: 2, dread: 2 },        // 절제. 대부분 비어 있다는 것을 먼저 학습시킨다
     title: '하나 · 골 목',
     lines: [
       '고양이가 사라진 골목.',
@@ -101,6 +102,7 @@ const LEVEL_DEF = {
   /* ===================== 낡은 건물 (2) ===================== */
   house: {
     theme: 'house', W: 46, H: 30, fill: TT.WALL, windows: true,
+    mins: { trace: 3, dread: 3 },
     title: '둘 · 낡 은  건 물',
     lines: [
       '안쪽은 바깥보다 더 조용했다.',
@@ -169,6 +171,7 @@ const LEVEL_DEF = {
   /* ===================== 지하 (3) ===================== */
   cellar: {
     theme: 'cellar', W: 50, H: 30, fill: TT.WALL, windows: false,
+    mins: { trace: 3, dread: 4 },        // 마지막 구간이 가장 조인다
     title: '셋 · 지 하',
     lines: [
       '계단은 아래로만 이어졌다.',
@@ -214,9 +217,49 @@ const LEVEL_DEF = {
   }
 };
 
-/* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ *
+   수색
+     열어볼 수 있는 물체와, 그 안에서 나오는 것.
+     결과는 레벨을 만들 때 위치로 한 번 정해지고 바뀌지 않는다.
+     같은 곳을 다시 열어 다른 결과를 뽑을 수 없어야 선택에 무게가 실린다.
+ * ------------------------------------------------------------------ */
+const SEARCHABLE = new Set(['cabinet', 'crate', 'drum', 'bin', 'barrel', 'shelf', 'bed']);
+/* 뚜껑·문이 열리는 것들. 수색 후 속이 비어 보이게 그린다 */
+const CONTAINER = new Set(['cabinet', 'crate', 'drum', 'bin', 'barrel']);
+
+/* 대부분은 비어 있어야 한다. 열 때마다 뭔가 나오면 긴장이 아니라 기대가 된다. */
+const OUTCOME_W = [
+  ['empty', 55],
+  ['trace', 14],
+  ['noise', 16],
+  ['dread', 15]
+];
+
+const FLAVOR = {
+  empty: [
+    '빈 옷걸이만 남아 있다.',
+    '먼지가 두껍게 앉았다. 오래 열리지 않은 것 같다.',
+    '아무것도 없다. 아무것도 없다는 것이 조금 이상하다.',
+    '누군가 이미 비워 갔다.',
+    '바닥에 신문지 몇 장. 날짜는 읽히지 않는다.'
+  ],
+  trace: [
+    '고양이 털 몇 올. 아직 따뜻한 것 같다.',
+    '작은 발자국이 안쪽으로 어지럽게 찍혀 있다.',
+    '목줄에서 떨어진 고리 하나가 굴러 나왔다.',
+    '여기서 한참 웅크리고 있었던 자국이 남아 있다.'
+  ],
+  noise: [
+    '안쪽에서 무언가 무너지는 소리가 났다.',
+    '무언가 빠르게 지나갔다. 쥐였을 것이다.',
+    '닫는 순간, 안에서 한 번 더 소리가 났다.',
+    '뒤쪽에서 뭔가가 넘어졌다. 돌아보니 아무것도 없다.'
+  ]
+};
+
 const Levels = {
   T: 16,
+  SEARCHABLE, CONTAINER, FLAVOR,
 
   build(name) {
     const D = LEVEL_DEF[name];
@@ -252,10 +295,26 @@ const Levels = {
 
     /* 소품 배치 */
     for (const [n, tx, ty, solid] of D.props) {
-      map.props.push({ n, tx, ty, x: tx * this.T + this.T / 2, y: ty * this.T + this.T - 1 });
+      const pr = { n, tx, ty, x: tx * this.T + this.T / 2, y: ty * this.T + this.T - 1 };
+      if (SEARCHABLE.has(n)) {
+        pr.searchable = true;
+        pr.searched = false;
+        pr.outcome = this.rollOutcome(name, tx, ty);
+        pr.flavorIdx = ((tx * 31 + ty * 17) >>> 0);
+      }
+      map.props.push(pr);
       if (solid) map.blocked[tx + ty * W] = 1;
     }
     map.props.sort((a, b) => a.y - b.y);
+
+    /* 레벨마다 최소치를 보장한다.
+       난수에 맡기면 한 스테이지에 공포 반응이 하나도 없는 판이 나온다 — 실제로 나왔다.
+       개수는 연출상 정하는 값이라 레벨 청사진에 직접 적는다. */
+    const searchables = map.props.filter(p => p.searchable);
+    const mins = D.mins || { trace: 2, dread: 2 };
+    this.ensureMin(searchables, 'trace', mins.trace);
+    this.ensureMin(searchables, 'dread', mins.dread);
+    map.searchTotal = searchables.length;
 
     map.start = { x: D.start[0] * this.T + this.T / 2, y: D.start[1] * this.T + this.T / 2 };
     if (D.goal) {
@@ -269,6 +328,37 @@ const Levels = {
       if (D.goal.t === 'cat') map.goal.y = D.goal.y * this.T + this.T / 2;
     }
     return map;
+  },
+
+  /* 위치로 고정되는 결과 추첨.
+     직접 짠 해시는 이 정도 표본에서 분포가 눈에 띄게 치우쳐서 검증된 PRNG 를 쓴다. */
+  rollOutcome(levelName, tx, ty) {
+    const seed = levelName.charCodeAt(0) * 7919 + levelName.length * 131 + tx * 977 + ty * 37;
+    const rnd = Tiles.rng(seed);
+    rnd(); rnd();                       // 인접한 좌표끼리 상관을 끊는다
+    let r = rnd() * 100;
+    for (const [k, w] of OUTCOME_W) { if (r < w) return k; r -= w; }
+    return 'empty';
+  },
+
+  /* 비어 있는 것들 중 일부를 kind 로 바꿔 최소 개수를 채운다.
+     한쪽에 몰리지 않도록 간격을 두고 고른다. */
+  ensureMin(list, kind, min) {
+    let have = list.filter(p => p.outcome === kind).length;
+    if (have >= min) return;
+    const pool = list.filter(p => p.outcome === 'empty');
+    if (!pool.length) return;
+    const need = min - have;
+    const stride = Math.max(1, Math.floor(pool.length / need));
+    for (let i = 0; have < min && i < pool.length; i += stride) {
+      pool[i].outcome = kind;
+      have++;
+    }
+  },
+
+  flavor(kind, idx) {
+    const pool = FLAVOR[kind];
+    return pool ? pool[idx % pool.length] : '';
   },
 
   solid(map, tx, ty) {

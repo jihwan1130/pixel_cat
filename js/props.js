@@ -68,6 +68,42 @@ const Props = {
     return p;
   },
 
+  /* 이미 열어본 상자·옷장. 속을 파내고 입구 테두리를 밝혀
+     "여기는 봤다" 를 한눈에 알 수 있게 한다. */
+  getOpen(name, variant = 0) {
+    const k = 'open|' + name + variant;
+    let p = this.cache.get(k);
+    if (p !== undefined) return p;
+
+    const base = this.get(name, variant);
+    if (!base) { this.cache.set(k, null); return null; }
+
+    const w = base.w, h = base.h;
+    p = { w, h, ax: base.ax, ay: base.ay, light: base.light,
+          lum: Float32Array.from(base.lum), a: Uint8Array.from(base.a) };
+
+    const x0 = 3, x1 = w - 3;
+    const y0 = Math.round(h * 0.22), y1 = h - 3;
+    for (let y = y0; y < y1; y++)
+      for (let x = x0; x < x1; x++) {
+        const i = x + y * w;
+        if (p.a[i]) p.lum[i] = 0.02;
+      }
+    // 열린 입구의 안쪽 테두리
+    for (let x = x0 - 1; x < x1 + 1; x++) {
+      const i = x + (y0 - 1) * w;
+      if (p.a[i]) p.lum[i] = 0.72;
+    }
+    for (let y = y0 - 1; y < y1; y++) {
+      for (const x of [x0 - 1, x1]) {
+        const i = x + y * w;
+        if (p.a[i]) p.lum[i] = 0.5;
+      }
+    }
+    this.cache.set(k, p);
+    return p;
+  },
+
   DEF: {
     /* ================= 공원 ================= */
     tree(rnd) {

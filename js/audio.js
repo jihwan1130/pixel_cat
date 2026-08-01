@@ -125,7 +125,9 @@ const Snd = {
       if (!this.started) return;
       this.bell();
       if (U.chance(0.35)) setTimeout(() => this.bell(0.6), U.rand(600, 1400));
-      this._scheduleBell(U.rand(6.5, 14));
+      // 불안도가 높을수록 종 간격이 좁아진다
+      const d = this.dread || 0;
+      this._scheduleBell(U.rand(6.5 - d * 0.45, 14 - d * 0.8));
     }, delay * 1000);
   },
 
@@ -284,6 +286,137 @@ const Snd = {
     ns.connect(f); f.connect(g);
     this._out(g, 0.5, 0.35);
     ns.start(t);
+  },
+
+  /* ---------------- 수색 / 공포 반응 ---------------- */
+
+  /* 뒤지는 소리 : 필터 걸린 잡음이 서너 번 툭툭 */
+  rummage() {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t0 = ctx.currentTime;
+    const taps = 3 + ((Math.random() * 2) | 0);
+    for (let i = 0; i < taps; i++) {
+      const t = t0 + i * U.rand(0.13, 0.24);
+      const ns = ctx.createBufferSource(); ns.buffer = this._noise(0.2);
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass'; f.frequency.value = U.rand(700, 2400); f.Q.value = 1.2;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(U.rand(0.05, 0.1), t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + U.rand(0.09, 0.18));
+      ns.connect(f); f.connect(g);
+      this._out(g, 0.5, 0.4);
+      ns.start(t);
+    }
+  },
+
+  /* 공포 스팅 : 하강하는 저음 + 불협 종 클러스터.
+     크게 때리지 않는다. 놀래키는 것이 아니라 바닥이 꺼지는 느낌을 노린다. */
+  sting() {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+
+    const sub = ctx.createOscillator(); sub.type = 'sine';
+    sub.frequency.setValueAtTime(90, t);
+    sub.frequency.exponentialRampToValueAtTime(24, t + 1.5);
+    const sg = ctx.createGain();
+    sg.gain.setValueAtTime(0.0001, t);
+    sg.gain.exponentialRampToValueAtTime(0.26, t + 0.05);
+    sg.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
+    sub.connect(sg);
+    this._out(sg, 0.8, 0.4);
+    sub.start(t); sub.stop(t + 1.7);
+
+    // 서로 어긋난 배음 — 종이지만 조율되지 않은 종
+    [1, 1.41, 2.07].forEach((r, i) => {
+      const o = ctx.createOscillator(); o.type = 'sine';
+      o.frequency.value = 233 * r * (1 + (Math.random() - 0.5) * 0.02);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t + i * 0.03);
+      g.gain.exponentialRampToValueAtTime(0.07, t + 0.02 + i * 0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 2.4);
+      o.connect(g);
+      this._out(g, 0.3, 1.0);
+      o.start(t); o.stop(t + 2.5);
+    });
+  },
+
+  /* 무언가 빠르게 지나가는 소리 */
+  scurry() {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t0 = ctx.currentTime;
+    for (let i = 0; i < 9; i++) {
+      const t = t0 + i * 0.045 + Math.random() * 0.02;
+      const ns = ctx.createBufferSource(); ns.buffer = this._noise(0.05);
+      const f = ctx.createBiquadFilter();
+      f.type = 'highpass'; f.frequency.value = 2600;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.045, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+      ns.connect(f); f.connect(g);
+      this._out(g, 0.55, 0.3);
+      ns.start(t);
+    }
+  },
+
+  /* 바로 귀 옆에서 울리는 종 — 잔향 없이 건조하게 */
+  nearBell() {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const f = 311.1, dur = 2.6;
+    const car = ctx.createOscillator(); car.type = 'sine'; car.frequency.value = f;
+    const mod = ctx.createOscillator(); mod.type = 'sine'; mod.frequency.value = f * 2.76;
+    const mg = ctx.createGain();
+    mg.gain.setValueAtTime(f * 3.4, t);
+    mg.gain.exponentialRampToValueAtTime(f * 0.05, t + dur);
+    mod.connect(mg); mg.connect(car.frequency);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.4, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    car.connect(g);
+    this._out(g, 1.0, 0.12);          // 거의 dry — 그래서 가깝게 들린다
+    car.start(t); mod.start(t);
+    car.stop(t + dur); mod.stop(t + dur);
+  },
+
+  /* 아주 낮은 숨소리 — 무언가 나타났다는 유일한 청각 단서 */
+  breath() {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const ns = ctx.createBufferSource(); ns.buffer = this._noise(1.4);
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass'; f.frequency.value = 340; f.Q.value = 1.6;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.05, t + 0.5);
+    g.gain.linearRampToValueAtTime(0.0001, t + 1.3);
+    ns.connect(f); f.connect(g);
+    this._out(g, 0.5, 0.8);
+    ns.start(t);
+  },
+
+  /* 사라질 때의 바람 */
+  whoosh() {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const ns = ctx.createBufferSource(); ns.buffer = this._noise(0.6);
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass'; f.Q.value = 1.1;
+    f.frequency.setValueAtTime(1800, t);
+    f.frequency.exponentialRampToValueAtTime(240, t + 0.5);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.09, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+    ns.connect(f); f.connect(g);
+    this._out(g, 0.5, 0.7);
+    ns.start(t);
+  },
+
+  /* 불안도가 오르면 종이 잦아지고 드론이 조금 더 눌린다 */
+  setDread(v) {
+    this.dread = U.clamp(v, 0, 10);
+    if (this.amb) this.setAmbience(1 + this.dread * 0.035, 3);
   },
 
   /* 엔딩용 : 부드럽게 해소되는 화음 */
