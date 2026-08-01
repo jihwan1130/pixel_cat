@@ -205,7 +205,7 @@ const Game = {
       P.walk += dt * 6.5;
       P.moving = true;
       this.stepT -= dt;
-      if (this.stepT <= 0) { Snd.step(); this.stepT = 0.46; }
+      if (this.stepT <= 0) { Snd.step(); this.stepT = 0.52; }
     } else P.moving = false;
     if (C.speed > 0) { C.x += C.speed * dt; C.anim += dt * 14; }
 
@@ -243,7 +243,8 @@ const Game = {
 
     // 불안도와 흔적은 스테이지를 넘어 누적된다 — 아래로 갈수록 조여지도록
     this.searchT = 0; this.searchTarget = null;
-    this.torchOutT = 0; this.figure = null; this.hiding = null;
+    this.torchOutT = 0; this.hiding = null;
+    this.dropFigure(false);
     this._lastTile.x = -1; this._lastTile.y = -1;
     this.figSpawnT = i === 0 ? U.rand(8, 14) : U.rand(20, 32);
     Narrator.clearFlash();
@@ -289,7 +290,7 @@ const Game = {
         P.walk += dt * 7 * mv.m;
         P.moving = true;
         this.stepT -= dt * mv.m;
-        if (this.stepT <= 0) { Snd.step(); this.stepT = 0.42; }
+        if (this.stepT <= 0) { Snd.step(); this.stepT = 0.48; }
       } else P.moving = false;
     }
     if (this.state !== 'play') return;
@@ -338,13 +339,13 @@ const Game = {
     this.figSpawnT -= dt;
     if (this.figSpawnT <= 0) {
       if (this.stageIdx === 0) {
-        // 1라운드는 자주 나타나되 바라보기만 한다
-        this.figSpawnT = U.rand(11, 19);
-        if (!this.figure && !this.locked && U.chance(0.55)) this.spawnFigure('watch', true);
+        // 나타나기는 하되 드물게. 흔해지면 무서운 것이 아니라 익숙한 것이 된다.
+        this.figSpawnT = U.rand(28, 42);
+        if (!this.figure && !this.locked && U.chance(0.35)) this.spawnFigure('watch', true);
       } else {
-        this.figSpawnT = U.rand(20, 34);
+        this.figSpawnT = U.rand(32, 50);
         if (!this.figure && !this.locked && !this.hiding && this.dread >= 2 &&
-            U.chance(Math.min(0.75, 0.25 + this.dread / 16))) this.spawnFigure('chase', true);
+            U.chance(Math.min(0.6, 0.16 + this.dread / 22))) this.spawnFigure('chase', true);
       }
     }
 
@@ -428,6 +429,11 @@ const Game = {
       default:
         Narrator.flash(Levels.flavor('empty', pr.flavorIdx));
     }
+
+    // 무엇이 나왔든, 뚜껑을 닫고 고개를 들면 서 있을 때가 있다.
+    // 손전등 반경 안쪽에 세워야 "보게" 되므로 거리를 좁게 잡는다.
+    // 여기서는 어느 라운드든 쫓아오지 않는다 — 쳐다보기만 한다.
+    if (U.chance(0.30)) this.spawnFigure('watch', false, { min: 62, max: 100 });
   },
 
   dreadBy(v) {
@@ -472,6 +478,14 @@ const Game = {
   ======================================== */
   defaultMode() { return this.stageIdx === 0 ? 'watch' : 'chase'; },
 
+  /* 그것을 치울 때는 반드시 여기를 지난다 — 추격 사운드가 남아 있으면 안 된다 */
+  dropFigure(whoosh) {
+    if (this.figure && this.figure.mode === 'chase') Snd.stopChase();
+    this.figure = null;
+    this.chaseProx = 0;
+    if (whoosh) Snd.whoosh();
+  },
+
   /* 갈 수 있는 칸 중에서 세울 자리를 고른다 */
   pickFigureSpot(minD, maxD, angle, spread) {
     const P = this.player, T = this.map.T;
@@ -501,10 +515,11 @@ const Game = {
       x: spot.x, y: spot.y, mode,
       t: U.rand(2.6, 4.6),
       farT: 0, lostT: 0, hunt: null,
-      flow: null, flowT: 0,
+      flow: null, flowT: 0, stepT: 0,
       lastSeen: { x: P.x + 4, y: P.y + 4 }
     };
     Snd.breath();
+    if (mode === 'chase') Snd.startChase();
     return true;
   },
 
@@ -523,7 +538,7 @@ const Game = {
     const corner = open >= 3 || (open === 2 && (up || dn) && (lf || rt));
     if (!corner) return;
 
-    if (!U.chance(this.stageIdx === 0 ? 0.13 : 0.06)) return;
+    if (!U.chance(this.stageIdx === 0 ? 0.028 : 0.015)) return;
     const ahead = Math.atan2(this.moveDir.y, this.moveDir.x);
     this.spawnFigure(this.defaultMode(), false,
       { angle: ahead, spread: 0.55, min: 68, max: 120 });
@@ -543,8 +558,8 @@ const Game = {
 
     if (F.mode === 'watch') {
       F.t -= dt;
-      if (U.dist(px, py, F.x, F.y) < 46) { this.figure = null; Snd.whoosh(); return; }
-      if (F.t <= 0) { this.figure = null; Snd.whoosh(); }
+      if (U.dist(px, py, F.x, F.y) < 46) { this.dropFigure(true); return; }
+      if (F.t <= 0) this.dropFigure(true);
       return;
     }
 
@@ -560,8 +575,18 @@ const Game = {
     // 그대로 두면 화면 어딘가에 영원히 서 있게 되므로 잠시 뒤 사라지게 한다.
     if (Math.hypot(F.x - bx, F.y - by) < 0.05) {
       F.stuckT = (F.stuckT || 0) + dt;
-      if (F.stuckT > 3) { this.figure = null; Snd.whoosh(); return; }
+      if (F.stuckT > 3) { this.dropFigure(true); return; }
     } else F.stuckT = 0;
+
+    /* 거리 정보는 전부 소리로 준다 — 심장박동 간격과 발소리 방향 */
+    const dist = U.dist(px, py, F.x, F.y);
+    this.chaseProx = U.clamp(1 - dist / 240, 0, 1);
+    Snd.setChaseIntensity(this.chaseProx);
+    F.stepT -= dt;
+    if (F.stepT <= 0) {
+      F.stepT = U.rand(0.44, 0.54);
+      Snd.figStep(U.clamp((F.x - px) / 220, -1, 1), U.clamp(1.1 - dist / 300, 0.12, 1));
+    }
 
     if (this.hiding) {
       if (F.hunt) {
@@ -569,17 +594,16 @@ const Game = {
         if (U.dist(F.hunt.x, F.hunt.y, F.x, F.y) < 15) { this.death('found'); }
       } else {
         F.lostT += dt;
-        if (F.lostT > 6.5) { this.figure = null; Snd.whoosh(); }
+        if (F.lostT > 6.5) this.dropFigure(true);
       }
       return;
     }
 
     F.lastSeen.x = px; F.lastSeen.y = py;
-    const d = U.dist(px, py, F.x, F.y);
-    if (d < this.CATCH_D) { this.death('caught'); return; }
-    if (d > this.GIVEUP_D) {
+    if (dist < this.CATCH_D) { this.death('caught'); return; }
+    if (dist > this.GIVEUP_D) {
       F.farT += dt;
-      if (F.farT > 2.5) { this.figure = null; Snd.whoosh(); }
+      if (F.farT > 2.5) this.dropFigure(true);
     } else F.farT = 0;
   },
 
@@ -696,6 +720,7 @@ const Game = {
     this.setHint('');
     Narrator.clear();
     Narrator.clearFlash();
+    Snd.stopChase();
     Snd.stopBells();
     Snd.sting();
     Snd.thump(0.15, 0.9);
@@ -704,6 +729,7 @@ const Game = {
     // 그것을 눈앞에 세운다
     const P = this.player;
     this.figure = { x: P.x + 4, y: P.y + 12, mode: 'inside', t: 1e9 };
+    this.chaseProx = 0;
 
     const line = kind === 'found'
       ? '옷장 문이, 밖에서 열렸다.'
@@ -719,7 +745,7 @@ const Game = {
   restartRun() {
     this.dread = 0;
     this.traces = 0;
-    this.figure = null;
+    this.dropFigure(false);
     Snd.setDread(0);
     Snd.setAmbience(1, 2);
     Snd._scheduleBell(4);      // death 에서 멈춘 종을 다시 돌린다
@@ -730,12 +756,24 @@ const Game = {
   torchScale() {
     if (this.state === 'dead') return Math.max(0.1, 1 - this.tlT * 0.55);
     if (this.hiding) return 0.3;
+
+    let s = 1;
     const t = this.torchOutT;
-    if (t <= 0) return 1;
-    if (t > 0.7) return 0.15;
-    const p = 1 - t / 0.7;
-    const flick = Math.sin(p * Math.PI * 5) > 0 ? 1 : 0.25;
-    return Math.min(1, U.lerp(0.15, 1.05, p) * flick + 0.1);
+    if (t > 0) {
+      if (t > 0.7) s = 0.15;
+      else {
+        const p = 1 - t / 0.7;
+        const flick = Math.sin(p * Math.PI * 5) > 0 ? 1 : 0.25;
+        s = Math.min(1, U.lerp(0.15, 1.05, p) * flick + 0.1);
+      }
+    }
+    // 가까워질수록 시야가 오므라든다. 아주 가까우면 떨린다.
+    const prox = this.chaseProx || 0;
+    if (prox > 0) {
+      s *= U.lerp(1, 0.76, prox);
+      if (prox > 0.72) s *= 1 + Math.sin(this.time * 26) * 0.06 * prox;
+    }
+    return s;
   },
 
   enterDoor() {
@@ -753,7 +791,7 @@ const Game = {
     this.state = 'ending';
     this.locked = true;
     this.setHint('');
-    this.figure = null;
+    this.dropFigure(false);
     this.torchOutT = 0;
     Narrator.clearFlash();
     const C = this.cat, P = this.player;
@@ -905,10 +943,8 @@ const Game = {
         const fx = Math.round(F.x - cam.x), fy = Math.round(F.y - cam.y);
         R.outline(SPR.FIGURE, fx - 6, fy - 31);
         R.sprite(SPR.FIGURE, fx - 6, fy - 31);
-        // 멀리 서 있는 쪽은 자기 몫의 희미한 빛이 있어야 어둠 속에서 겨우 보인다
-        if (F.mode === 'watch') lights.push({ x: fx, y: fy - 15, r: 36, i: 0.40 });
-        // 쫓아오는 쪽은 더 희미하다 — 발소리와 실루엣만으로 거리를 재게 한다
-        else if (F.mode === 'chase') lights.push({ x: fx, y: fy - 15, r: 30, i: 0.30 });
+        // 빛을 주지 않는다. 자기 주변을 밝히면 위치를 알려주는 표시등이 된다 —
+        // 손전등이 우연히 닿았을 때 비로소 거기 있었다는 것을 알아야 한다.
       } else if (o.kind === 'cat') {
         const C = this.cat;
         const cx = Math.round(C.x - cam.x), cy = Math.round(C.y - cam.y);

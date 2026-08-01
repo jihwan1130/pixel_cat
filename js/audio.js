@@ -273,18 +273,41 @@ const Snd = {
     o.start(t); o.stop(t + dur + 0.05); vib.stop(t + dur + 0.05);
   },
 
-  /* 발소리 */
+  /* 발소리 — 터벅터벅.
+     저역이 실린 무게 + 신발이 바닥을 끄는 잡음. 잔향을 넉넉히 실어
+     빈 공간에서 자기 발소리가 되돌아오게 한다.
+     좌우 발을 번갈아 조금씩 다르게 낸다 — 똑같은 소리가 반복되면
+     발소리가 아니라 메트로놈으로 들린다. */
   step() {
     if (!this.ctx) return;
     const ctx = this.ctx, t = ctx.currentTime;
-    const ns = ctx.createBufferSource(); ns.buffer = this._noise(0.12);
-    const f = ctx.createBiquadFilter();
-    f.type = 'lowpass'; f.frequency.value = U.rand(500, 900); f.Q.value = 1.5;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.05, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
-    ns.connect(f); f.connect(g);
-    this._out(g, 0.5, 0.35);
+    this._foot = !this._foot;
+    const heavy = this._foot;
+
+    // 몸무게가 실리는 낮은 쿵
+    const o = ctx.createOscillator(); o.type = 'sine';
+    const f0 = (heavy ? 104 : 91) * U.rand(0.97, 1.03);
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f0 * 0.42, t + 0.13);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, t);
+    og.gain.exponentialRampToValueAtTime(heavy ? 0.105 : 0.078, t + 0.012);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.21);
+    o.connect(og);
+
+    // 신발 바닥이 끌리는 소리
+    const ns = ctx.createBufferSource(); ns.buffer = this._noise(0.24);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = U.rand(560, 980); lp.Q.value = 1.2;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0001, t);
+    ng.gain.exponentialRampToValueAtTime(heavy ? 0.055 : 0.041, t + 0.009);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + U.rand(0.14, 0.21));
+    ns.connect(lp); lp.connect(ng);
+
+    this._out(og, 0.55, 0.5);
+    this._out(ng, 0.5, 0.55);
+    o.start(t); o.stop(t + 0.28);
     ns.start(t);
   },
 
@@ -411,6 +434,133 @@ const Snd = {
     ns.connect(f); f.connect(g);
     this._out(g, 0.5, 0.7);
     ns.start(t);
+  },
+
+  /* ---------------- 추격 ----------------
+     빛으로 위치를 알려주지 않기로 했으므로, 거리 정보는 전부 소리로 준다.
+     심장박동 간격 = 얼마나 가까운가. 발소리 패닝 = 어느 쪽인가.
+  ---------------------------------------- */
+  startChase() {
+    if (!this.ctx || this.chaseOn) return;
+    this.chaseOn = true;
+    this.chaseIntensity = 0;
+    const ctx = this.ctx, t = ctx.currentTime;
+
+    // 추격이 시작되면 종은 멎는다. 익숙한 소리가 사라지는 것 자체가 신호다.
+    this.stopBells();
+
+    this.chaseGain = ctx.createGain();
+    this.chaseGain.gain.setValueAtTime(0.0001, t);
+    this.chaseGain.gain.linearRampToValueAtTime(1, t + 1.0);
+    this.chaseGain.connect(this.master);
+
+    // 바닥에 깔리는 저역
+    const o1 = ctx.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = 36.5;
+    const o2 = ctx.createOscillator(); o2.type = 'sawtooth'; o2.frequency.value = 36.5 * 1.014;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 100; lp.Q.value = 6;
+    const dg = ctx.createGain(); dg.gain.value = 0.09;
+    o1.connect(lp); o2.connect(lp); lp.connect(dg); dg.connect(this.chaseGain);
+    o1.start(t); o2.start(t);
+
+    // 귀 안쪽에서 나는 것 같은 가는 고음
+    const hn = ctx.createBufferSource(); hn.buffer = this._noise(4); hn.loop = true;
+    const hb = ctx.createBiquadFilter();
+    hb.type = 'bandpass'; hb.frequency.value = 3200; hb.Q.value = 14;
+    const hg = ctx.createGain(); hg.gain.value = 0.010;
+    hn.connect(hb); hb.connect(hg); hg.connect(this.chaseGain);
+    hn.start(t);
+
+    this._chaseNodes = [o1, o2, hn];
+    this._chaseLp = lp; this._chaseDrone = dg; this._chaseHiss = hg;
+    this._beat();
+  },
+
+  _beat() {
+    if (!this.chaseOn) return;
+    const i = this.chaseIntensity;
+    this.heart(0.55 + i * 0.55);
+    this.beatTimer = setTimeout(() => this._beat(), U.lerp(1.15, 0.44, i) * 1000);
+  },
+
+  /* 두 번 치는 심장 */
+  heart(vol) {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t0 = ctx.currentTime;
+    [0, 0.17].forEach((off, k) => {
+      const t = t0 + off;
+      const o = ctx.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(74, t);
+      o.frequency.exponentialRampToValueAtTime(33, t + 0.17);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.30 * vol * (k ? 0.68 : 1), t + 0.014);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.27);
+      o.connect(g);
+      this._out(g, 0.9, 0.12);
+      o.start(t); o.stop(t + 0.32);
+    });
+  },
+
+  setChaseIntensity(v) {
+    this.chaseIntensity = U.clamp(v, 0, 1);
+    if (!this.chaseOn) return;
+    const t = this.ctx.currentTime;
+    this._chaseDrone.gain.setTargetAtTime(0.09 + this.chaseIntensity * 0.15, t, 0.4);
+    this._chaseLp.frequency.setTargetAtTime(95 + this.chaseIntensity * 140, t, 0.4);
+    this._chaseHiss.gain.setTargetAtTime(0.010 + this.chaseIntensity * 0.032, t, 0.5);
+  },
+
+  stopChase() {
+    if (!this.chaseOn) return;
+    this.chaseOn = false;
+    clearTimeout(this.beatTimer);
+    const t = this.ctx.currentTime;
+    this.chaseGain.gain.cancelScheduledValues(t);
+    this.chaseGain.gain.setValueAtTime(this.chaseGain.gain.value, t);
+    this.chaseGain.gain.linearRampToValueAtTime(0.0001, t + 1.3);
+    const nodes = this._chaseNodes || [];
+    this._chaseNodes = [];
+    setTimeout(() => { for (const n of nodes) { try { n.stop(); } catch (e) { /* 이미 멈춤 */ } } }, 1500);
+    // 종을 다시 돌린다 — 조용해졌다는 것을 알려주는 것도 연출이다
+    if (this.started) this._scheduleBell(U.rand(3, 6));
+  },
+
+  /* 그것의 발소리 — 주인공 발소리보다 무겁고 건조하다 */
+  figStep(pan, vol) {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+
+    const ns = ctx.createBufferSource(); ns.buffer = this._noise(0.2);
+    const nf = ctx.createBiquadFilter();
+    nf.type = 'lowpass'; nf.frequency.value = 360; nf.Q.value = 2;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0001, t);
+    ng.gain.exponentialRampToValueAtTime(0.13 * vol, t + 0.01);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(88, t);
+    o.frequency.exponentialRampToValueAtTime(44, t + 0.13);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, t);
+    og.gain.exponentialRampToValueAtTime(0.15 * vol, t + 0.008);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
+
+    ns.connect(nf); nf.connect(ng); o.connect(og);
+
+    let tail;
+    if (ctx.createStereoPanner) {
+      const p = ctx.createStereoPanner();
+      p.pan.value = U.clamp(pan, -1, 1);
+      ng.connect(p); og.connect(p);
+      tail = p;
+    } else {
+      tail = ctx.createGain();
+      ng.connect(tail); og.connect(tail);
+    }
+    this._out(tail, 0.75, 0.3);
+    ns.start(t); o.start(t); o.stop(t + 0.3);
   },
 
   /* 불안도가 오르면 종이 잦아지고 드론이 조금 더 눌린다 */
