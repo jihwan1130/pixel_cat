@@ -1,37 +1,11 @@
 /* -------------------------------------------------------------------------
    고양이를 찾아서 — 게임 본체
-   상태 : title → intro(연출) → play(1,2,3) → ending → end
+   title → intro(공원 연출) → play(골목 / 낡은 건물 / 지하) → ending → end
 ------------------------------------------------------------------------- */
 
-const STAGES = [
-  {
-    title: '하나 · 골 목',
-    cw: 13, ch: 9, rooms: 1, braid: 0.40,
-    lines: [
-      '고양이가 사라진 골목.',
-      '벽들이 전부 같은 얼굴을 하고 있어서, 몇 번을 돌았는지 알 수 없다.'
-    ]
-  },
-  {
-    title: '둘 · 낡 은  건 물',
-    cw: 15, ch: 11, rooms: 4, braid: 0.45,
-    lines: [
-      '안쪽은 바깥보다 더 조용했다.',
-      '종소리가, 이제는 벽 안에서 들리는 것 같았다.'
-    ]
-  },
-  {
-    title: '셋 · 지 하',
-    cw: 17, ch: 12, rooms: 3, braid: 0.50,
-    lines: [
-      '계단은 아래로만 이어졌다.',
-      '여기 어딘가에, 고양이가 앉아 있다.'
-    ]
-  }
-];
+const STAGES = ['alley', 'house', 'cellar'];
 
 const Game = {
-  /* ---- 상태 ---- */
   state: 'title',
   stageIdx: 0,
   time: 0,
@@ -42,24 +16,21 @@ const Game = {
   cat: null,
   goal: null,
   cam: { x: 0, y: 0 },
-  decor: [],
 
   fade: 0,
   _f0: 0, _f1: 0, _fd: 0, _ft: 0,
 
-  tl: [],
-  tlT: 0,
+  tl: [], tlT: 0,
+  meowT: 0, creakT: 0, stepT: 0,
 
-  meowT: 0,
-  creakT: 0,
-  stepT: 0,
+  SPEED: 62,
+  TORCH: 96,
 
   el: {},
 
   /* --------------------------------------------------------------- */
   init() {
-    const canvas = document.getElementById('game');
-    R.init(canvas);
+    R.init(document.getElementById('game'));
     Input.init();
     Narrator.init();
 
@@ -97,7 +68,7 @@ const Game = {
   },
 
   /* ---- UI ---- */
-  showStageTitle(text, dur = 3.2) {
+  showStageTitle(text, dur = 3.4) {
     this.el.stageTitle.textContent = text;
     this.el.stageTitle.classList.add('on');
     clearTimeout(this._stT);
@@ -115,13 +86,12 @@ const Game = {
     this.time += dt;
     this.updateFade(dt);
     Narrator.update(dt);
-
     switch (this.state) {
-      case 'title':   this.updTitle(dt);  break;
-      case 'intro':   this.updIntro(dt);  break;
-      case 'play':    this.updPlay(dt);   break;
-      case 'ending':  this.updEnding(dt); break;
-      case 'end':     this.updEnd(dt);    break;
+      case 'title':  this.updTitle(dt);  break;
+      case 'intro':  this.updIntro(dt);  break;
+      case 'play':   this.updPlay(dt);   break;
+      case 'ending': this.updEnding(dt); break;
+      case 'end':    this.updEnd(dt);    break;
     }
   },
 
@@ -135,66 +105,45 @@ const Game = {
     this.startIntro();
   },
 
-  /* ---------------- INTRO (연출) ---------------- */
+  /* ---------------- INTRO : 공원 ---------------- */
   startIntro() {
     this.state = 'intro';
-    this.buildIntroMap();
+    this.map = Levels.build('park');
+    this.goal = null;
 
-    this.player = { x: 46, y: 92, vx: 0, vy: 0, face: 1, walk: 0, speed: 0, w: 6, h: 6 };
-    this.cat = { x: 108, y: 96, speed: 0, run: false, face: -1, alive: true, anim: 0 };
+    const s = this.map.start;
+    this.player = { x: s.x - 4, y: s.y - 4, w: 8, h: 8, face: 1, walk: 0, speed: 0, moving: false };
+    this.cat = { x: s.x + 74, y: s.y + 14, face: -1, run: false, alive: true, anim: 0, speed: 0 };
+
+    this.cam.x = this.player.x - R.W / 2;
+    this.cam.y = this.player.y - R.H / 2;
+    this.clampCam();
+
     this.fade = 0;
-    this.fadeTo(1, 2.6);
+    this.fadeTo(1, 2.8);
     this.setHint('SPACE — 건너뛰기');
 
     const P = this.player, C = this.cat;
     this.setTimeline([
-      { at: 0.6, fn: () => { P.speed = 21; C.speed = 21; } },
-      { at: 1.6, fn: () => Narrator.say(['밤 산책.']) },
-      { at: 4.6, fn: () => Narrator.say(['고양이는 언제나 나보다 세 걸음 앞서 걷는다.']) },
-      { at: 8.0, fn: () => { C.speed = 0; Snd.bell(1.0); } },
-      { at: 8.9, fn: () => { P.speed = 0; } },
-      { at: 9.4, fn: () => Narrator.say(['어딘가 먼 곳에서 종이 울렸다.']) },
-      { at: 12.0, fn: () => { C.face = -1; Snd.meow(0.1, 0.9); } },
-      { at: 13.0, fn: () => Narrator.say(['고양이가 귀를 세웠다.']) },
-      { at: 15.6, fn: () => { C.run = true; C.face = 1; C.speed = 96; Snd.meow(0.5, 0.7); } },
-      { at: 16.4, fn: () => Narrator.say(['…그리고 어둠 속으로 뛰어들었다.']) },
-      { at: 18.6, fn: () => { C.alive = false; Snd.bell(0.7); } },
-      { at: 19.4, fn: () => { P.speed = 40; } },
-      { at: 20.4, fn: () => { P.speed = 0; Narrator.say(['나는 빈 목줄만 쥔 채 서 있었다.']); } },
-      { at: 23.6, fn: () => { this.fadeTo(0, 2.2); Narrator.clear(); this.setHint(''); } },
-      { at: 26.2, fn: () => this.startStage(0) }
+      { at: 0.6,  fn: () => { P.speed = 28; C.speed = 28; } },
+      { at: 1.8,  fn: () => Narrator.say(['밤 산책.']) },
+      { at: 4.8,  fn: () => Narrator.say(['고양이는 언제나 나보다 세 걸음 앞서 걷는다.']) },
+      { at: 8.4,  fn: () => { C.speed = 0; Snd.bell(1.0); } },
+      { at: 9.3,  fn: () => { P.speed = 0; } },
+      { at: 9.8,  fn: () => Narrator.say(['어딘가 먼 곳에서 종이 울렸다.']) },
+      { at: 12.4, fn: () => { C.face = -1; Snd.meow(0.1, 0.9); } },
+      { at: 13.4, fn: () => Narrator.say(['고양이가 귀를 세웠다.']) },
+      { at: 16.0, fn: () => { C.run = true; C.face = 1; C.speed = 132; Snd.meow(0.5, 0.7); } },
+      { at: 16.8, fn: () => Narrator.say(['…그리고 가로등이 닿지 않는 곳으로 뛰어들었다.']) },
+      { at: 19.4, fn: () => { C.alive = false; Snd.bell(0.7); } },
+      { at: 20.2, fn: () => { P.speed = 54; } },
+      { at: 21.4, fn: () => { P.speed = 0; Narrator.say(['나는 빈 목줄만 쥔 채 서 있었다.']); } },
+      { at: 24.6, fn: () => { this.fadeTo(0, 2.4); Narrator.clear(); this.setHint(''); } },
+      { at: 27.4, fn: () => this.startStage(0) }
     ]);
   },
 
-  buildIntroMap() {
-    const cw = 68, ch = 15, T = Maze.TILE;
-    const g = [];
-    for (let y = 0; y < ch; y++) g.push(new Uint8Array(cw).fill(1));
-    // 가로 통로 (3타일 높이)
-    for (let x = 1; x < cw - 1; x++)
-      for (let y = 6; y <= 8; y++) g[y][x] = 0;
-    // 옆으로 난 골목 몇 개
-    for (let i = 0; i < 9; i++) {
-      const x = U.randInt(6, cw - 8);
-      const up = U.chance(0.5);
-      const len = U.randInt(2, 4);
-      for (let k = 1; k <= len; k++) {
-        const y = up ? 6 - k : 8 + k;
-        if (y > 0 && y < ch - 1) g[y][x] = 0;
-      }
-    }
-    this.map = { grid: g, W: cw, H: ch, T };
-
-    // 장식 : 천장에 매달린 가로등 / 통로 아래쪽에 선 마른 나무
-    this.decor = [];
-    for (let x = 4; x < cw - 4; x += U.randInt(6, 10)) {
-      if (U.chance(0.55)) this.decor.push({ spr: SPR.LAMP, x: x * T + 4, y: 6 * T + 1, glow: true });
-      else this.decor.push({ spr: SPR.TREE, x: x * T + 2, y: 9 * T - 12, glow: false });
-    }
-  },
-
   updIntro(dt) {
-    // 시작 직후 같은 키 입력이 두 번 잡혀 연출이 건너뛰어지는 것을 막는다
     if (this.tlT > 1.0 && Input.pressed(' ', 'enter', 'escape')) {
       Narrator.clear(); this.setHint(''); this.tl = [];
       this.fadeTo(0, 0.5);
@@ -206,40 +155,36 @@ const Game = {
     const P = this.player, C = this.cat;
     if (P.speed > 0) {
       P.x += P.speed * dt;
-      P.walk += dt * 7;
+      P.walk += dt * 6.5;
+      P.moving = true;
       this.stepT -= dt;
       if (this.stepT <= 0) { Snd.step(); this.stepT = 0.46; }
-    }
-    if (C.speed > 0) { C.x += C.speed * dt; C.anim += dt * 12; }
+    } else P.moving = false;
+    if (C.speed > 0) { C.x += C.speed * dt; C.anim += dt * 14; }
 
-    this.followCam(P.x, P.y, dt, 6);
+    this.followCam(P.x + 4, P.y + 4, dt, 5);
   },
 
   /* ---------------- STAGE ---------------- */
   startStage(i) {
     this.stageIdx = i;
-    const S = STAGES[i];
     this.state = 'play';
     this.locked = true;
-    this.decor = [];
 
-    this.map = Maze.generate(S.cw, S.ch, { rooms: S.rooms, braid: S.braid });
-    const T = this.map.T;
+    this.map = Levels.build(STAGES[i]);
+    const m = this.map, T = m.T;
 
-    this.player = { x: T + 3, y: T + 3, face: 1, walk: 0, w: 6, h: 6, moving: false };
+    this.player = { x: m.start.x - 4, y: m.start.y - 4, w: 8, h: 8, face: 1, walk: 0, moving: false };
+    this.goal = m.goal;
 
-    const far = Maze.farthest(this.map, 1, 1);
-    const last = (i === STAGES.length - 1);
-    this.goal = {
-      tx: far.x, ty: far.y,
-      x: far.x * T + T / 2,
-      y: far.y * T + T / 2,
-      type: last ? 'cat' : 'door',
-      used: false
-    };
-    // 다가오는 쪽(왼쪽)을 바라보고 앉아 있다
-    if (last) this.cat = { x: this.goal.x, y: this.goal.y, face: 1, alive: true, run: false, anim: 0, speed: 0 };
-    else this.cat = null;
+    if (m.goal.type === 'cat')
+      this.cat = { x: m.goal.x, y: m.goal.y, face: 1, run: false, alive: true, anim: 0, speed: 0 };
+    else
+      this.cat = null;
+
+    if (!Levels.reachable(m, { x: (m.start.x / T) | 0, y: (m.start.y / T) | 0 },
+                             { x: m.goal.tx, y: m.goal.ty }))
+      console.warn('[level] 목표에 도달할 수 없다:', STAGES[i]);
 
     this.cam.x = this.player.x - R.W / 2;
     this.cam.y = this.player.y - R.H / 2;
@@ -251,17 +196,21 @@ const Game = {
 
     this.fade = 0;
     this.fadeTo(1, 2.2);
-    this.showStageTitle(S.title, 3.4);
+    this.showStageTitle(m.title, 3.6);
     Snd.setAmbience(1, 3);
 
     setTimeout(() => {
       if (this.state !== 'play') return;
-      Narrator.say(S.lines, () => { this.locked = false; this.setHint('W A S D — 이동   ·   E — 상호작용'); setTimeout(() => this.setHint(''), 4000); });
-    }, 1600);
+      Narrator.say(m.lines, () => {
+        this.locked = false;
+        this.setHint('W A S D — 이동   ·   E — 상호작용');
+        setTimeout(() => this.setHint(''), 4000);
+      });
+    }, 1700);
   },
 
   updPlay(dt) {
-    const P = this.player, T = this.map.T;
+    const P = this.player;
 
     if (this.locked) {
       if (Input.pressed(' ', 'enter', 'e')) Narrator.advance();
@@ -274,55 +223,45 @@ const Game = {
       if (Input.held('s', 'arrowdown')) dy += 1;
       if (dx || dy) {
         const l = Math.hypot(dx, dy);
-        dx /= l; dy /= l;
-        const sp = 46;
-        this.moveAxis(P, dx * sp * dt, 0);
-        this.moveAxis(P, 0, dy * sp * dt);
+        this.moveAxis(P, dx / l * this.SPEED * dt, 0);
+        this.moveAxis(P, 0, dy / l * this.SPEED * dt);
         if (dx) P.face = dx > 0 ? 1 : -1;
-        P.walk += dt * 7.5;
+        P.walk += dt * 7;
         P.moving = true;
         this.stepT -= dt;
-        if (this.stepT <= 0) { Snd.step(); this.stepT = 0.44; }
-      } else {
-        P.moving = false;
-      }
+        if (this.stepT <= 0) { Snd.step(); this.stepT = 0.42; }
+      } else P.moving = false;
     }
 
     const pcx = P.x + P.w / 2, pcy = P.y + P.h / 2;
     this.followCam(pcx, pcy, dt, 5);
 
-    /* --- 목표와의 상호작용 --- */
+    /* --- 목표 --- */
     const G = this.goal;
     const d = U.dist(pcx, pcy, G.x, G.y);
     if (!this.locked && !G.used) {
-      if (d < 16) {
+      if (d < 30) {
         this.setHint(G.type === 'door' ? 'E — 문을 연다' : 'E — 고양이를 부른다');
         if (Input.pressed('e')) {
           G.used = true;
           this.setHint('');
-          if (G.type === 'door') this.enterDoor();
-          else this.startEnding();
+          if (G.type === 'door') this.enterDoor(); else this.startEnding();
         }
-      } else if (this.el.hint.textContent.startsWith('E —')) {
-        this.setHint('');
-      }
+      } else if (this.el.hint.textContent.startsWith('E —')) this.setHint('');
     }
 
-    /* --- 고양이 울음(방향 유도) --- */
+    /* --- 고양이 울음 : 목표 방향으로 패닝 --- */
     this.meowT -= dt;
     if (this.meowT <= 0 && !G.used) {
       this.meowT = U.rand(7.5, 13);
-      const pan = U.clamp((G.x - pcx) / 260, -1, 1);
-      const vol = U.clamp(1.15 - d / 780, 0.16, 1);
-      Snd.meow(pan, vol);
+      Snd.meow(U.clamp((G.x - pcx) / 340, -1, 1), U.clamp(1.15 - d / 950, 0.16, 1));
     }
 
     /* --- 멀리서 문이 여닫히는 소리 --- */
     this.creakT -= dt;
     if (this.creakT <= 0) {
       this.creakT = U.rand(22, 44);
-      if (U.chance(0.6)) Snd.creak(0.30);
-      else Snd.thump(0, 0.4);
+      if (U.chance(0.6)) Snd.creak(0.30); else Snd.thump(0, 0.4);
     }
   },
 
@@ -331,9 +270,8 @@ const Game = {
     Snd.creak();
     this.fadeTo(0, 1.8);
     setTimeout(() => {
-      Narrator.say(['문 너머에서, 아주 작게 울음소리가 났다.'], () => {
-        this.startStage(this.stageIdx + 1);
-      });
+      Narrator.say(['문 너머에서, 아주 작게 울음소리가 났다.'],
+        () => this.startStage(this.stageIdx + 1));
     }, 2000);
   },
 
@@ -345,12 +283,12 @@ const Game = {
     const C = this.cat, P = this.player;
 
     this.setTimeline([
-      { at: 0.2, fn: () => Snd.meow(0, 1) },
-      { at: 0.8, fn: () => Narrator.say(['…찾았다.']) },
-      { at: 3.4, fn: () => Narrator.say(['고양이는 처음부터 그 자리에 앉아 있었던 것처럼 보였다.']) },
-      { at: 7.0, fn: () => { P.walkTo = { x: C.x - 10, y: C.y - 3 }; } },
-      { at: 9.0, fn: () => { Snd.stopBells(); Snd.resolve(); Narrator.say(['품에 안자, 종소리가 멎었다.']); } },
-      { at: 12.5, fn: () => { C.alive = false; Snd.setAmbience(0.45, 4); Narrator.say(['우리는 왔던 길을 되짚어 걸었다.']); } },
+      { at: 0.2,  fn: () => Snd.meow(0, 1) },
+      { at: 0.8,  fn: () => Narrator.say(['…찾았다.']) },
+      { at: 3.4,  fn: () => Narrator.say(['고양이는 처음부터 그 자리에 앉아 있었던 것처럼 보였다.']) },
+      { at: 7.0,  fn: () => { P.walkTo = { x: C.x - 18, y: C.y - 4 }; } },
+      { at: 9.2,  fn: () => { Snd.stopBells(); Snd.resolve(); Narrator.say(['품에 안자, 종소리가 멎었다.']); } },
+      { at: 12.6, fn: () => { C.alive = false; Snd.setAmbience(0.45, 4); Narrator.say(['우리는 왔던 길을 되짚어 걸었다.']); } },
       { at: 16.0, fn: () => { Snd.creak(0.55); Narrator.say(['뒤에서, 문이 하나 조용히 닫혔다.']); } },
       { at: 19.5, fn: () => { this.fadeTo(0, 3.0); Snd.setAmbience(0, 4); } },
       { at: 23.0, fn: () => this.showEnd() }
@@ -363,9 +301,9 @@ const Game = {
     if (P.walkTo) {
       const dx = P.walkTo.x - P.x, dy = P.walkTo.y - P.y;
       const l = Math.hypot(dx, dy);
-      if (l < 1.2) { P.walkTo = null; P.moving = false; }
+      if (l < 1.5) { P.walkTo = null; P.moving = false; }
       else {
-        const sp = Math.min(l, 26 * dt);
+        const sp = Math.min(l, 34 * dt);
         P.x += dx / l * sp; P.y += dy / l * sp;
         P.face = dx > 0 ? 1 : -1;
         P.walk += dt * 6;
@@ -374,21 +312,20 @@ const Game = {
         if (this.stepT <= 0) { Snd.step(); this.stepT = 0.5; }
       }
     }
-    this.followCam(P.x + 3, P.y + 3, dt, 4);
+    this.followCam(P.x + 4, P.y + 4, dt, 4);
   },
 
   showEnd() {
     this.state = 'end';
     Narrator.clear();
-    this.el.stageTitle.innerHTML = '고 양 이 를  찾 아 서<br><span style="font-size:.45em;letter-spacing:.9em;opacity:.6">끝</span>';
+    this.el.stageTitle.innerHTML =
+      '고 양 이 를  찾 아 서<br><span style="font-size:.45em;letter-spacing:.9em;opacity:.6">끝</span>';
     this.el.stageTitle.classList.add('on');
     clearTimeout(this._stT);
     setTimeout(() => this.setHint('R — 다시 시작'), 2600);
   },
 
-  updEnd() {
-    if (Input.pressed('r')) location.reload();
-  },
+  updEnd() { if (Input.pressed('r')) location.reload(); },
 
   /* ---------------- 이동 / 충돌 ---------------- */
   moveAxis(P, dx, dy) {
@@ -396,8 +333,7 @@ const Game = {
     const sx = dx / steps, sy = dy / steps;
     for (let i = 0; i < steps; i++) {
       const nx = P.x + sx, ny = P.y + sy;
-      if (this.free(nx, ny, P.w, P.h)) { P.x = nx; P.y = ny; }
-      else break;
+      if (this.free(nx, ny, P.w, P.h)) { P.x = nx; P.y = ny; } else break;
     }
   },
 
@@ -407,15 +343,14 @@ const Game = {
     const y0 = Math.floor(y / T), y1 = Math.floor((y + h - 1) / T);
     for (let ty = y0; ty <= y1; ty++)
       for (let tx = x0; tx <= x1; tx++)
-        if (Maze.solid(this.map, tx, ty)) return false;
+        if (Levels.solid(this.map, tx, ty)) return false;
     return true;
   },
 
   followCam(cx, cy, dt, k) {
-    const tx = cx - R.W / 2, ty = cy - R.H / 2;
     const a = 1 - Math.pow(0.0015, dt * (k / 5));
-    this.cam.x = U.lerp(this.cam.x, tx, a);
-    this.cam.y = U.lerp(this.cam.y, ty, a);
+    this.cam.x = U.lerp(this.cam.x, cx - R.W / 2, a);
+    this.cam.y = U.lerp(this.cam.y, cy - R.H / 2, a);
     this.clampCam();
   },
 
@@ -430,66 +365,89 @@ const Game = {
   ================================================================= */
   draw() {
     R.clear(0);
-    if (this.state === 'title') { R.present([], 0, 0); return; }
-    if (!this.map) return;
+    if (this.state === 'title' || !this.map) { R.present([], 0, 0); return; }
 
     const cam = { x: Math.round(this.cam.x), y: Math.round(this.cam.y) };
-    R.drawMap(this.map, cam);
-
+    const map = this.map, T = map.T;
     const lights = [];
 
-    /* 장식 — 화면 밖은 건너뛴다(광원 수 = present 비용) */
-    for (const d of this.decor) {
-      const sx = d.x - cam.x, sy = d.y - cam.y;
-      if (sx < -60 || sx > R.W + 60) continue;
-      R.sprite(d.spr, sx, sy, 1);
-      if (d.glow) lights.push({ x: sx + 2, y: sy + 2, r: 46, i: 0.55 });
-    }
+    /* --- 타일 --- */
+    const tx0 = Math.max(0, (cam.x / T) | 0);
+    const ty0 = Math.max(0, (cam.y / T) | 0);
+    const tx1 = Math.min(map.W - 1, ((cam.x + R.W) / T) | 0);
+    const ty1 = Math.min(map.H - 1, ((cam.y + R.H) / T) | 0);
 
-    /* 목표(문 / 고양이) */
-    if (this.goal && this.state !== 'end') {
-      const G = this.goal;
-      const gx = Math.round(G.x - cam.x), gy = Math.round(G.y - cam.y);
-      if (G.type === 'door' && !G.used) {
-        const pulse = 0.82 + Math.sin(this.time * 1.6) * 0.16;
-        R.sprite(SPR.DOOR, gx - 6, gy - 9, pulse);
-        // 멀리서도 아주 희미하게 보이는 등대 역할
-        lights.push({ x: gx, y: gy, r: 26 + Math.sin(this.time * 1.1) * 3, i: 0.42 });
+    for (let ty = ty0; ty <= ty1; ty++) {
+      for (let tx = tx0; tx <= tx1; tx++) {
+        const t = map.grid[ty][tx];
+        if (t === TT.VOID) continue;
+        const variant = (tx * 7 + ty * 13) & 3;
+        const tile = Tiles.get(map.theme, TT_NAME[t], Levels.mask(map, tx, ty), variant);
+        R.blit(tile, tx * T - cam.x, ty * T - cam.y);
       }
     }
 
-    /* 고양이 */
-    if (this.cat && this.cat.alive) {
-      const C = this.cat;
-      const cx = Math.round(C.x - cam.x), cy = Math.round(C.y - cam.y);
-      if (C.run) {
-        const bob = Math.floor(C.anim) % 2;
-        R.outline(SPR.CAT_RUN, cx - 6, cy - 5 + bob, C.face < 0);
-        R.sprite(SPR.CAT_RUN, cx - 6, cy - 5 + bob, 1, C.face < 0);
+    /* --- 목표 문에 은은한 빛 --- */
+    const G = this.goal;
+    if (G && G.type === 'door' && !G.used) {
+      lights.push({
+        x: G.x - cam.x, y: G.y - cam.y + 4,
+        r: 40 + Math.sin(this.time * 1.1) * 4, i: 0.5
+      });
+    }
+
+    /* --- 소품 + 캐릭터를 y 순으로 겹쳐 그린다 --- */
+    const order = [];
+    for (const pr of map.props) {
+      const sx = pr.x - cam.x, sy = pr.y - cam.y;
+      if (sx < -50 || sx > R.W + 50 || sy < -60 || sy > R.H + 60) continue;
+      // 전구는 천장에 매달려 있으므로 무엇에도 가리지 않게 마지막에 그린다
+      order.push({ y: pr.n === 'bulb' ? 1e9 : pr.y, kind: 'prop', pr, sx, sy });
+    }
+    if (this.cat && this.cat.alive) order.push({ y: this.cat.y, kind: 'cat' });
+    if (this.player) order.push({ y: this.player.y + this.player.h, kind: 'man' });
+    order.sort((a, b) => a.y - b.y);
+
+    for (const o of order) {
+      if (o.kind === 'prop') {
+        const p = Props.get(o.pr.n, (o.pr.tx * 3 + o.pr.ty) & 3);
+        if (!p) continue;
+        R.drawProp(p, o.sx, o.sy);
+        if (p.light)
+          lights.push({ x: o.sx + p.light.dx, y: o.sy + p.light.dy, r: p.light.r, i: p.light.i });
+      } else if (o.kind === 'cat') {
+        const C = this.cat;
+        const cx = Math.round(C.x - cam.x), cy = Math.round(C.y - cam.y);
+        if (C.run) {
+          const bob = Math.floor(C.anim) % 2;
+          R.outline(SPR.CAT_RUN, cx - 11, cy - 10 + bob, C.face < 0);
+          R.sprite(SPR.CAT_RUN, cx - 11, cy - 10 + bob, C.face < 0);
+        } else {
+          R.outline(SPR.CAT_SIT, cx - 8, cy - 11, C.face < 0);
+          R.sprite(SPR.CAT_SIT, cx - 8, cy - 11, C.face < 0);
+        }
+        lights.push({ x: cx, y: cy - 3, r: 22, i: 0.9 });
+        lights.push({ x: cx, y: cy - 3, r: 46, i: 0.45 });
       } else {
-        R.outline(SPR.CAT_SIT, cx - 5, cy - 7, C.face < 0);
-        R.sprite(SPR.CAT_SIT, cx - 5, cy - 7, 1, C.face < 0);
+        const P = this.player;
+        const px = Math.round(P.x - cam.x), py = Math.round(P.y - cam.y);
+        const frame = P.moving && (Math.floor(P.walk) % 2) ? SPR.MAN_B : SPR.MAN_A;
+        R.outline(frame, px - 2, py - 13, P.face < 0);
+        R.sprite(frame, px - 2, py - 13, P.face < 0);
       }
-      // 고양이 주변에 옅은 빛 + 몸에 걸리는 밝은 심지
-      // (심지가 없으면 실루엣이 디더 무늬에 먹혀 읽히지 않는다)
-      lights.push({ x: cx, y: cy, r: this.state === 'intro' ? 26 : 34, i: 0.5 });
-      lights.push({ x: cx, y: cy - 2, r: 13, i: 0.97 });
     }
 
-    /* 주인공 */
+    /* --- 손전등 --- */
     if (this.player) {
       const P = this.player;
-      const px = Math.round(P.x - cam.x), py = Math.round(P.y - cam.y);
-      const frame = (P.moving || P.speed > 0) && (Math.floor(P.walk) % 2) ? SPR.MAN_B : SPR.MAN_A;
-      R.outline(frame, px, py - 2, P.face < 0);
-      R.sprite(frame, px, py - 2, 1, P.face < 0);
-
-      // 손전등 : 미세하게 흔들리는 원형 광원
+      const px = Math.round(P.x - cam.x) + 4, py = Math.round(P.y - cam.y) + 2;
       const fl = 1 + Math.sin(this.time * 7.3) * 0.018 + Math.sin(this.time * 21.7) * 0.01;
-      lights.push({ x: px + 3, y: py + 1, r: (this.state === 'intro' ? 62 : 56) * fl, i: 1 });
+      lights.push({ x: px, y: py, r: (this.state === 'intro' ? this.TORCH + 14 : this.TORCH) * fl, i: 1 });
     }
 
-    R.present(lights, this.fade, 0.05, this.state === 'intro' ? 0.013 : 0.010);
+    // ambient 를 아주 조금만 준다. 밝은 재질(건물 입면·갓돌)만 겨우 드러나고
+    // 바닥은 crush 임계값 아래라 완전한 검정으로 남는다 — 멀리 구조물 윤곽만 보이는 상태.
+    R.present(lights, this.fade, 0.032, 0.05);
   }
 };
 
