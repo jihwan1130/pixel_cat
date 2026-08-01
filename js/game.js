@@ -31,11 +31,8 @@ const Game = {
   torchOutT: 0,
   figure: null,
   sentries: [],              // 처음부터 정해진 좌표에 서 있는 것들
-  figSpawnT: 0,
   hiding: null,              // { pr, spot } — 상자·옷장 안에 들어가 있는 상태
   flick: 0,                  // 들킨 채 숨어 있을 때의 화면 명멸
-  _lastTile: { x: -1, y: -1 },
-  moveDir: { x: 1, y: 0 },
 
   SPEED: 62,
   STRIDE: 27,                // 이만큼 걸을 때마다 발소리 한 번.
@@ -44,8 +41,12 @@ const Game = {
   FIG_SPEED: 0.7,            // 주인공 속도의 배율. 느리지만 쉬지 않는다.
   CREEP_SPEED: 0.30,         // 숨은 자리를 찾아낸 뒤 다가올 때. 느릴수록 길게 조인다.
   CATCH_D: 13,               // 잡히는 거리
-  SEEN_D: 150,               // 이 안에서 숨으면 들어가는 것을 본다
-  HIDE_FIND_D: 52,           // 못 봤어도 이만큼 가까이 지나가면 숨은 자리를 찾아낸다
+  SEEN_D: 84,                // 이 안에서 숨으면 들어가는 것을 본다.
+                             // 이보다 멀면 못 본다 — 판정은 오직 이 거리 하나다.
+                             // 넓게 잡으면(150 으로 해 봤다) 추격 중에는 늘 이 안이라
+                             // 숨는다는 선택지 자체가 없어진다.
+  NEAR_MISS_D: 40,           // 서성이다 이만큼 스치면 문 앞에서 한 번 멈춘다.
+                             // 놀라기는 하되 찾아내지는 않는다 — 못 봤으면 못 찾는다.
   WAKE_D: 132,               // 서 있던 것이 이쪽을 알아채는 거리
   GIVEUP_D: 210,             // 이만큼 떨어진 채로 2.5초 버티면 포기한다.
                              // 속도차가 초당 18px 뿐이라 이보다 크면 맵 길이 안에서 따돌릴 수 없다.
@@ -255,8 +256,6 @@ const Game = {
     this.dropFigure(false);
     // 정해진 좌표에 서 있는 것들. 다가가면 깨어난다.
     this.sentries = (m.sentries || []).map(s => ({ x: s.x, y: s.y }));
-    this._lastTile.x = -1; this._lastTile.y = -1;
-    this.figSpawnT = i === 0 ? U.rand(8, 14) : U.rand(20, 32);
     Narrator.clearFlash();
 
     this.fade = 0;
@@ -309,7 +308,6 @@ const Game = {
         this.moveAxis(P, mv.x * sp * dt, 0);
         this.moveAxis(P, 0, mv.y * sp * dt);
         if (Math.abs(mv.x) > 0.25) P.face = mv.x > 0 ? 1 : -1;
-        this.moveDir.x = mv.x; this.moveDir.y = mv.y;
         P.walk += dt * 7 * mv.m;
         P.moving = true;
         // 벽에 밀려 실제로 움직이지 못하면 발소리도 나지 않는다
@@ -320,7 +318,6 @@ const Game = {
 
     const pcx = P.x + P.w / 2, pcy = P.y + P.h / 2;
     this.followCam(pcx, pcy, dt, 5);
-    this.checkCorner();
 
     /* --- 상호작용 --- */
     const G = this.goal;
@@ -383,20 +380,9 @@ const Game = {
     if (hint) this.setHint(hint, true);
     else if (this._actionHint) this.setHint('');
 
-    /* --- 출현 : 자리는 언제나 레벨에 박아 둔 lairs 중 하나다 --- */
-    this.figSpawnT -= dt;
-    if (this.figSpawnT <= 0) {
-      if (this.stageIdx === 0) {
-        // 나타나기는 하되 드물게. 흔해지면 무서운 것이 아니라 익숙한 것이 된다.
-        this.figSpawnT = U.rand(28, 42);
-        if (!this.figure && !this.locked && !this.hiding && U.chance(0.35))
-          this.spawnFigure('watch', true);
-      } else {
-        this.figSpawnT = U.rand(32, 50);
-        if (!this.figure && !this.locked && !this.hiding && this.dread >= 2 &&
-            U.chance(Math.min(0.6, 0.16 + this.dread / 22))) this.spawnFigure('chase', true);
-      }
-    }
+    /* 시간이 지났다고 저절로 나타나지는 않는다.
+       그것이 나오는 경로는 셋뿐이고 전부 좌표로 정해져 있다 —
+       처음부터 서 있던 것(sentries) / 특정 물건을 건드렸을 때(triggers) / 철문을 열었을 때. */
 
     /* --- 고양이 울음 : 목표 방향으로 패닝 --- */
     this.meowT -= dt;
@@ -429,8 +415,8 @@ const Game = {
     Snd.gateOpen();
     Narrator.flash('빗장이 풀리고, 철문이 안쪽으로 밀려났다.', { dur: 4.0 });
     this.dreadBy(1);
-    // 쇠가 긁히는 소리는 멀리 간다. 뭔가가 이쪽으로 온다.
-    this.figSpawnT = Math.min(this.figSpawnT, U.rand(5, 10));
+    // 쇠가 긁히는 소리는 멀리 간다. 정해진 자리에 하나 선다.
+    this.spawnAt(this.map.gateSpawn, this.defaultMode());
   },
 
   /* ---------------- 수색 ---------------- */
@@ -503,13 +489,10 @@ const Game = {
         Narrator.flash(Levels.flavor('empty', pr.flavorIdx));
     }
 
-    // 무엇이 나왔든, 뚜껑을 닫고 고개를 들면 서 있을 때가 있다.
+    // 정해진 물건을 건드렸다면, 뚜껑을 닫고 고개를 들었을 때 정해진 자리에 서 있다.
     // 1라운드에서는 쳐다보기만 하지만, 그 뒤로는 그대로 걸어온다.
-    if (this.stageIdx === 0) {
-      if (U.chance(0.30)) this.spawnFigure('watch', false, { min: 62, max: 150 });
-    } else if (U.chance(0.24)) {
-      this.spawnFigure('chase', false, { min: 70, max: 200 });
-    }
+    const spot = this.map.triggers.get(pr.tx + ',' + pr.ty);
+    if (spot) this.spawnAt(spot, this.defaultMode());
   },
 
   /* 열쇠 / 열쇠 조각을 손에 넣는다 */
@@ -560,9 +543,9 @@ const Game = {
         Snd.sting();
         break;
       default:
+        // 소리만 난다. 실제로 무언가 서는 것은 triggers 에 적힌 자리뿐이다.
         Narrator.flash('뒤에서 문이 닫히는 소리가 났다. 방금 지나온 곳이다.', { bad: true, dur: 4.8 });
         Snd.creak(0.7);
-        this.spawnFigure(this.defaultMode(), true);
     }
   },
 
@@ -583,60 +566,25 @@ const Game = {
     if (whoosh) Snd.whoosh();
   },
 
-  /* 세울 자리는 레벨에 박아 둔 lairs 중에서만 고른다.
-     아무 데서나 튀어나오면 어디가 위험한지 배울 수가 없다 —
-     같은 자리에서 반복해 나와야 그 골목을 피해 다니게 된다.
-     주인공에게서 실제로 걸어올 수 있는 자리인지도 함께 본다(철문 너머 등). */
-  pickLair(minD, maxD, angle, spread) {
-    const m = this.map;
-    if (!m.lairs || !m.lairs.length) return null;
-    const P = this.player, px = P.x + 4, py = P.y + 4;
-    const flow = this.buildFlow({ x: px, y: py });
-    const inRange = [], any = [];
-
-    for (const l of m.lairs) {
-      if (flow && flow[l.tx + l.ty * m.W] < 0) continue;   // 길이 끊긴 자리
-      const d = U.dist(px, py, l.x, l.y);
-      if (d < minD) continue;
-      any.push({ l, d });
-      if (d > maxD) continue;
-      if (angle !== null && angle !== undefined) {
-        let da = Math.atan2(l.y - py, l.x - px) - angle;
-        while (da > Math.PI) da -= Math.PI * 2;
-        while (da < -Math.PI) da += Math.PI * 2;
-        if (Math.abs(da) > spread) continue;
-      }
-      inRange.push(l);
-    }
-    if (inRange.length) return U.choice(inRange);
-    if (!any.length) return null;
-    // 조건에 맞는 자리가 없으면 가장 가까운 자리에서 나온다
-    any.sort((a, b) => a.d - b.d);
-    return any[0].l;
-  },
-
   makeFigure(x, y, mode) {
     const P = this.player;
     this.figure = {
       x, y, mode,
-      t: U.rand(2.6, 4.6),
-      farT: 0, lostT: 0, hunt: null, prowlT: 0, prowlTo: null,
+      t: 3.4,                  // 응시 시간. 판마다 달라지면 안 되므로 고정값이다.
+      farT: 0, lostT: 0, hunt: null, prowlT: 0, prowlTo: null, missT: 0,
       flow: null, flowT: 0, stepT: 0,
-      lastSeen: { x: P.x + 4, y: P.y + 4 }
+      lastSeen: { x: P.x + 4, y: P.y + 4 },
+      trail: { x: P.x + 4, y: P.y + 4 }
     };
     Snd.breath();
     if (mode === 'chase') Snd.startChase();
     return this.figure;
   },
 
-  spawnFigure(mode, behind, opt = {}) {
-    if (this.figure) return false;
-    const P = this.player;
-    const angle = opt.angle !== undefined ? opt.angle
-                : behind ? (P.face > 0 ? Math.PI : 0) : null;
-    const spread = opt.spread !== undefined ? opt.spread : 1.0;
-    const spot = this.pickLair(opt.min || 96, opt.max || 220, angle, spread);
-    if (!spot) return false;
+  /* 청사진에 적힌 좌표에 그것을 세운다.
+     이미 하나 나와 있거나 숨어 있는 중이면 세우지 않는다. */
+  spawnAt(spot, mode) {
+    if (!spot || this.figure || this.hiding || this.locked) return false;
     this.makeFigure(spot.x, spot.y, mode);
     return true;
   },
@@ -668,27 +616,6 @@ const Game = {
     Narrator.flash('그것이 상자 밖으로 발을 내디뎠다.', { bad: true, dur: 4.0 });
   },
 
-  /* 모퉁이를 돌자마자 눈앞에 서 있는 순간 */
-  checkCorner() {
-    const T = this.map.T, P = this.player;
-    const tx = ((P.x + 4) / T) | 0, ty = ((P.y + 4) / T) | 0;
-    if (tx === this._lastTile.x && ty === this._lastTile.y) return;
-    this._lastTile.x = tx; this._lastTile.y = ty;
-    if (this.figure || this.hiding || this.locked || !P.moving) return;
-
-    const m = Levels.mask(this.map, tx, ty);
-    const up = !!(m & 1), rt = !!(m & 2), dn = !!(m & 4), lf = !!(m & 8);
-    const open = (up ? 1 : 0) + (rt ? 1 : 0) + (dn ? 1 : 0) + (lf ? 1 : 0);
-    // 갈림길이거나, 세로/가로가 꺾이는 자리
-    const corner = open >= 3 || (open === 2 && (up || dn) && (lf || rt));
-    if (!corner) return;
-
-    if (!U.chance(this.stageIdx === 0 ? 0.028 : 0.015)) return;
-    const ahead = Math.atan2(this.moveDir.y, this.moveDir.x);
-    this.spawnFigure(this.defaultMode(), false,
-      { angle: ahead, spread: 0.7, min: 64, max: 150 });
-  },
-
   updFigure(dt) {
     const F = this.figure;
     if (!F) return;
@@ -716,7 +643,7 @@ const Game = {
          · 들킨 경우(hunt)   — 숨은 자리로 곧장, 아주 느리게 다가온다
          · 못 본 경우(prowl) — 마지막으로 본 자리 근처를 서성인다 */
     let target;
-    if (this.hiding) target = F.hunt || F.prowlTo || F.lastSeen;
+    if (this.hiding) target = F.hunt || F.prowlTo || F.trail;
     else target = { x: px, y: py };
 
     F.flowT -= dt;
@@ -748,6 +675,13 @@ const Game = {
     if (this.hiding) { this.updHidden(F, dt, dist); return; }
 
     F.lastSeen.x = px; F.lastSeen.y = py;
+    // '마지막으로 제대로 본 자리' 는 조금 뒤처져 따라온다.
+    // 숨는 순간의 위치를 그대로 쓰면 곧장 그 상자 앞으로 걸어와 선다 —
+    // 못 보고 놓쳤는데도 매번 정확히 찾아오는 것처럼 보이던 원인이다.
+    const k = 1 - Math.pow(0.3, dt);
+    F.trail.x += (px - F.trail.x) * k;
+    F.trail.y += (py - F.trail.y) * k;
+
     if (dist < this.CATCH_D) { this.death('caught'); return; }
     if (dist > this.GIVEUP_D) {
       F.farT += dt;
@@ -780,17 +714,24 @@ const Game = {
       return;
     }
 
-    /* --- 못 봤다 : 주변을 서성이다 사라진다 --- */
+    /* --- 못 봤다 : 주변을 서성이다 사라진다.
+       여기서는 무슨 짓을 해도 찾아내지 못한다. 들어가는 것을 봤느냐 아니냐,
+       판정은 그 한 번뿐이다 — 그래야 "얼마나 벌리고 숨을까" 가 실제 선택이 된다. --- */
     this.flick = 0;
     F.lostT += dt;
 
-    // 문 앞을 스치면 그제야 알아챈다
-    if (U.dist(spot.x, spot.y, F.x, F.y) < this.HIDE_FIND_D) { this.spotted(F, '바로 앞에서 발소리가 멈췄다.'); return; }
+    // 문 앞을 스쳐 지나간다. 발소리가 멎었다가, 다시 멀어진다.
+    F.missT -= dt;
+    if (U.dist(spot.x, spot.y, F.x, F.y) < this.NEAR_MISS_D && F.missT <= 0) {
+      F.missT = 4.5;
+      Snd.breath();
+      Narrator.flash('발소리가 문 바로 앞에서 멈췄다.', { bad: true, dur: 3.0 });
+    }
 
-    // 마지막으로 본 자리 언저리를 돌아다닌다
+    // 마지막으로 제대로 본 자리 언저리를 돌아다닌다
     F.prowlT -= dt;
     if (F.prowlT <= 0 || !F.prowlTo) {
-      F.prowlTo = this.prowlPoint(F.lastSeen);
+      F.prowlTo = this.prowlPoint(F.trail);
       F.prowlT = U.rand(1.6, 2.8);
       F.flowT = 0;
     }

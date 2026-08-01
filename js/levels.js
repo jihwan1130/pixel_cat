@@ -101,13 +101,16 @@ const LEVEL_DEF = {
       ['pallet', 17, 12], ['pallet', 33, 23], ['pallet', 22, 2],
       ['sign', 20, 30, 1], ['sign', 44, 24, 1], ['sign', 3, 12, 1]
     ],
-    /* 그것이 서는 자리. 무작위로 튀어나오지 않고 반드시 이 좌표들 중 하나에서 나온다. */
-    lairs: [
-      [2, 2], [43, 3], [24, 2], [2, 18], [10, 15], [10, 26], [19, 6],
-      [27, 15], [27, 26], [35, 10], [35, 25], [20, 29], [32, 22], [43, 20], [23, 24]
-    ],
     /* 처음부터 그 자리에 서 있는 것 */
     sentries: [[23, 24]],
+    /* 무엇을 건드리면 어디에 서는가 — [수색 대상 tx,ty, 나타나는 tx,ty]
+       확률도 무작위 위치도 없다. 같은 물건을 열면 언제나 같은 자리에 선다. */
+    triggers: [
+      [5, 8, 10, 10],
+      [2, 20, 2, 26],
+      [24, 26, 27, 22],
+      [37, 19, 35, 25]
+    ],
     start: [43, 29],
     goal: { t: 'door', x: 14, y: 11 }
   },
@@ -184,11 +187,15 @@ const LEVEL_DEF = {
       ['locker', 2, 2, 1], ['locker', 26, 10, 1], ['locker', 36, 2, 1],
       ['locker', 2, 17, 1], ['locker', 12, 27, 1], ['locker', 43, 26, 1]
     ],
-    lairs: [
-      [17, 4], [30, 4], [41, 4], [5, 25], [17, 26], [30, 25], [41, 25],
-      [22, 9], [22, 24], [8, 14], [32, 14], [6, 10], [41, 10], [6, 19], [41, 19]
-    ],
     sentries: [[30, 7], [6, 24]],
+    triggers: [
+      [8, 4, 17, 4],           // A 옷장 → B 방
+      [28, 3, 41, 4],          // C 선반 → D 방
+      [9, 19, 22, 24],         // E 옷장 → 아래 복도
+      [38, 20, 32, 14],        // H 선반 → 가로 복도
+      [42, 18, 41, 25],        // 열쇠가 든 옷장. 집어 드는 순간 방 안쪽에 선다
+      [33, 14, 22, 9]          // 복도 장 → 세로 복도
+    ],
     start: [4, 4],
     goal: { t: 'door', x: 13, y: 16 }
   },
@@ -247,13 +254,19 @@ const LEVEL_DEF = {
       ['pipeH', 37, 16], ['pipeH', 38, 16], ['pipeH', 39, 16],
       ['puddle', 10, 8], ['puddle', 29, 12], ['puddle', 39, 22], ['puddle', 10, 20]
     ],
-    lairs: [
-      [3, 3], [11, 9], [21, 5], [29, 8], [38, 3], [46, 11],
-      [16, 6], [33, 5], [25, 12], [41, 14], [33, 20],
-      [22, 15], [29, 22], [20, 24], [39, 25], [46, 18]
-    ],
     /* 마지막 챔버 안쪽에도 하나 세워 둔다 — 철문을 열고 들어선 직후 */
     sentries: [[29, 16], [44, 22], [12, 18]],
+    triggers: [
+      [12, 4, 11, 9],          // 조각 하나 → 챔버1 안쪽
+      [19, 8, 16, 6],          // 챔버2 상자 → 통로
+      [46, 8, 38, 3],          // 챔버3 드럼통 → 챔버3 안쪽
+      [37, 18, 41, 14],        // 조각 둘 → 통로
+      [23, 25, 29, 22],        // 조각 셋 → 보일러실 건너편
+      [30, 25, 33, 20],        // 보일러실 상자 → 통로
+      [6, 17, 14, 17]          // 철문 너머 챔버 안 — 마지막 구간
+    ],
+    /* 철문을 여는 소리는 멀리 간다. 열면 반드시 여기에 하나 선다. */
+    gateSpawn: [20, 24],
     start: [45, 6],
     goal: { t: 'cat', x: 7, y: 22 }
   }
@@ -368,12 +381,25 @@ const Levels = {
     this.ensureMin(searchables, 'dread', mins.dread);
     map.searchTotal = searchables.length;
 
-    /* 그것이 나오는 자리 / 처음부터 서 있는 자리 */
+    /* 그것이 나타나는 자리.
+       전부 청사진에 좌표로 적혀 있다 — 확률도, 무작위 위치도, 시간에 맡기는 출현도 없다.
+       같은 판을 다시 하면 같은 자리에서 같은 것이 나온다. */
     const pt = ([x, y]) => ({ tx: x, ty: y, x: x * this.T + this.T / 2, y: y * this.T + this.T - 2 });
-    map.lairs = (D.lairs || []).map(pt);
-    map.sentries = (D.sentries || []).map(pt);
-    for (const s of map.lairs.concat(map.sentries))
-      if (this.solid(map, s.tx, s.ty)) console.warn('[level] 설 수 없는 자리:', name, s.tx, s.ty);
+    const stand = (sx, sy, why) => {
+      if (this.solid(map, sx, sy)) console.warn('[level] 설 수 없는 자리:', name, why, sx, sy);
+      return pt([sx, sy]);
+    };
+
+    map.sentries = (D.sentries || []).map(([x, y]) => stand(x, y, 'sentry'));
+
+    /* 수색 대상 → 나타나는 자리 */
+    map.triggers = new Map();
+    for (const [px, py, sx, sy] of (D.triggers || [])) {
+      const pr = map.props.find(p => p.tx === px && p.ty === py && p.searchable);
+      if (!pr) { console.warn('[level] 트리거를 걸 수색 대상이 없다:', name, px, py); continue; }
+      map.triggers.set(px + ',' + py, stand(sx, sy, 'trigger ' + px + ',' + py));
+    }
+    if (D.gateSpawn) map.gateSpawn = stand(D.gateSpawn[0], D.gateSpawn[1], 'gateSpawn');
 
     /* 철문 : 격자에 찍힌 GATE 칸을 모아 하나의 문으로 다룬다 */
     const gt = [];
