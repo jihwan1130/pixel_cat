@@ -31,9 +31,17 @@ const Game = {
   torchOutT: 0,
   figure: null,
   figSpawnT: 0,
+  hiding: null,              // { pr } — 상자·옷장 안에 들어가 있는 상태
+  _lastTile: { x: -1, y: -1 },
+  moveDir: { x: 1, y: 0 },
 
   SPEED: 62,
   TORCH: 96,
+  FIG_SPEED: 0.7,            // 주인공 속도의 배율. 느리지만 쉬지 않는다.
+  CATCH_D: 13,               // 잡히는 거리
+  SEEN_D: 95,                // 이 안에서 숨으면 들킨다
+  GIVEUP_D: 210,             // 이만큼 떨어진 채로 2.5초 버티면 포기한다.
+                             // 속도차가 초당 18px 뿐이라 이보다 크면 맵 길이 안에서 따돌릴 수 없다.
 
   el: {},
 
@@ -125,6 +133,7 @@ const Game = {
       case 'title':  this.updTitle(dt);  break;
       case 'intro':  this.updIntro(dt);  break;
       case 'play':   this.updPlay(dt);   break;
+      case 'dead':   this.updateTimeline(dt); break;
       case 'ending': this.updEnding(dt); break;
       case 'end':    this.updEnd(dt);    break;
     }
@@ -234,8 +243,9 @@ const Game = {
 
     // 불안도와 흔적은 스테이지를 넘어 누적된다 — 아래로 갈수록 조여지도록
     this.searchT = 0; this.searchTarget = null;
-    this.torchOutT = 0; this.figure = null;
-    this.figSpawnT = U.rand(22, 36);
+    this.torchOutT = 0; this.figure = null; this.hiding = null;
+    this._lastTile.x = -1; this._lastTile.y = -1;
+    this.figSpawnT = i === 0 ? U.rand(8, 14) : U.rand(20, 32);
     Narrator.clearFlash();
 
     this.fade = 0;
@@ -265,7 +275,7 @@ const Game = {
     if (this.torchOutT > 0) this.torchOutT -= dt;
     this.updFigure(dt);
 
-    if (this.locked || this.searchT > 0) {
+    if (this.locked || this.searchT > 0 || this.hiding) {
       if (this.locked && Input.pressed(' ', 'enter', 'e')) Narrator.advance();
       P.moving = false;
     } else {
@@ -275,21 +285,29 @@ const Game = {
         this.moveAxis(P, mv.x * sp * dt, 0);
         this.moveAxis(P, 0, mv.y * sp * dt);
         if (Math.abs(mv.x) > 0.25) P.face = mv.x > 0 ? 1 : -1;
+        this.moveDir.x = mv.x; this.moveDir.y = mv.y;
         P.walk += dt * 7 * mv.m;
         P.moving = true;
         this.stepT -= dt * mv.m;
         if (this.stepT <= 0) { Snd.step(); this.stepT = 0.42; }
       } else P.moving = false;
     }
+    if (this.state !== 'play') return;
 
     const pcx = P.x + P.w / 2, pcy = P.y + P.h / 2;
     this.followCam(pcx, pcy, dt, 5);
+    this.checkCorner();
 
-    /* --- 상호작용 : 목표가 우선, 없으면 가까운 수색 대상 --- */
+    /* --- 상호작용 --- */
     const G = this.goal;
     const d = U.dist(pcx, pcy, G.x, G.y);
+    const chased = this.figure && this.figure.mode === 'chase';
     let hint = '';
-    if (!this.locked && this.searchT <= 0) {
+
+    if (this.hiding) {
+      hint = 'E — 나온다';
+      if (Input.pressed('e')) { this.exitHide(); return; }
+    } else if (!this.locked && this.searchT <= 0) {
       if (!G.used && d < 30) {
         hint = G.type === 'door' ? 'E — 문을 연다' : 'E — 고양이를 부른다';
         if (Input.pressed('e')) {
@@ -297,6 +315,13 @@ const Game = {
           this.setHint('');
           if (G.type === 'door') this.enterDoor(); else this.startEnding();
           return;
+        }
+      } else if (chased) {
+        // 쫓기는 중에는 뒤지는 대신 들어가 숨는다
+        const pr = this.nearestContainer(pcx, pcy);
+        if (pr) {
+          hint = 'E — 숨는다';
+          if (Input.pressed('e')) { this.tryHide(pr); return; }
         }
       } else {
         const pr = this.nearestSearchable(pcx, pcy);
@@ -309,12 +334,18 @@ const Game = {
     if (hint) this.setHint(hint, true);
     else if (this._actionHint) this.setHint('');
 
-    /* --- 시야 가장자리에 무언가 서 있는 순간 --- */
+    /* --- 출현 --- */
     this.figSpawnT -= dt;
     if (this.figSpawnT <= 0) {
-      this.figSpawnT = U.rand(16, 30);
-      if (!this.figure && !this.locked && this.dread >= 3 &&
-          U.chance(Math.min(0.7, this.dread / 14))) this.spawnDistantFigure(true);
+      if (this.stageIdx === 0) {
+        // 1라운드는 자주 나타나되 바라보기만 한다
+        this.figSpawnT = U.rand(11, 19);
+        if (!this.figure && !this.locked && U.chance(0.55)) this.spawnFigure('watch', true);
+      } else {
+        this.figSpawnT = U.rand(20, 34);
+        if (!this.figure && !this.locked && !this.hiding && this.dread >= 2 &&
+            U.chance(Math.min(0.75, 0.25 + this.dread / 16))) this.spawnFigure('chase', true);
+      }
     }
 
     /* --- 고양이 울음 : 목표 방향으로 패닝 --- */
@@ -430,47 +461,275 @@ const Game = {
       default:
         Narrator.flash('뒤에서 문이 닫히는 소리가 났다. 방금 지나온 곳이다.', { bad: true, dur: 4.8 });
         Snd.creak(0.7);
-        this.spawnDistantFigure(true);
+        this.spawnFigure(this.defaultMode(), true);
     }
   },
 
-  /* ---------------- 그것 ---------------- */
-  spawnDistantFigure(behind) {
+  /* ================= 그것 =================
+     1라운드 : 'watch' — 서서 바라보기만 한다. 다가가면 사라진다.
+     2라운드 이후 : 'chase' — 주인공의 0.7배 속도로 따라온다.
+                    상자·옷장에 숨거나 충분히 멀어지면 따돌릴 수 있다.
+  ======================================== */
+  defaultMode() { return this.stageIdx === 0 ? 'watch' : 'chase'; },
+
+  /* 갈 수 있는 칸 중에서 세울 자리를 고른다 */
+  pickFigureSpot(minD, maxD, angle, spread) {
     const P = this.player, T = this.map.T;
-    for (let i = 0; i < 60; i++) {
-      const a = behind
-        ? (P.face > 0 ? Math.PI : 0) + U.rand(-1.0, 1.0)
-        : Math.random() * Math.PI * 2;
-      const dist = U.rand(96, 168);
+    for (let i = 0; i < 70; i++) {
+      const a = angle === null ? Math.random() * Math.PI * 2 : angle + U.rand(-spread, spread);
+      const dist = U.rand(minD, maxD);
       const wx = P.x + 4 + Math.cos(a) * dist;
       const wy = P.y + 4 + Math.sin(a) * dist;
       const tx = (wx / T) | 0, ty = (wy / T) | 0;
       if (!Levels.walkTile(this.map, tx, ty)) continue;
       if (this.map.blocked[tx + ty * this.map.W]) continue;
-      this.figure = { x: tx * T + T / 2, y: ty * T + T - 2, t: U.rand(2.6, 4.4), mode: 'distant' };
-      Snd.breath();
-      return true;
+      return { x: tx * T + T / 2, y: ty * T + T - 2 };
     }
-    return false;
+    return null;
+  },
+
+  spawnFigure(mode, behind, opt = {}) {
+    if (this.figure) return false;
+    const P = this.player;
+    const angle = opt.angle !== undefined ? opt.angle
+                : behind ? (P.face > 0 ? Math.PI : 0) : null;
+    const spread = opt.spread !== undefined ? opt.spread : 1.0;
+    const spot = this.pickFigureSpot(opt.min || 96, opt.max || 168, angle, spread);
+    if (!spot) return false;
+
+    this.figure = {
+      x: spot.x, y: spot.y, mode,
+      t: U.rand(2.6, 4.6),
+      farT: 0, lostT: 0, hunt: null,
+      flow: null, flowT: 0,
+      lastSeen: { x: P.x + 4, y: P.y + 4 }
+    };
+    Snd.breath();
+    return true;
+  },
+
+  /* 모퉁이를 돌자마자 눈앞에 서 있는 순간 */
+  checkCorner() {
+    const T = this.map.T, P = this.player;
+    const tx = ((P.x + 4) / T) | 0, ty = ((P.y + 4) / T) | 0;
+    if (tx === this._lastTile.x && ty === this._lastTile.y) return;
+    this._lastTile.x = tx; this._lastTile.y = ty;
+    if (this.figure || this.hiding || this.locked || !P.moving) return;
+
+    const m = Levels.mask(this.map, tx, ty);
+    const up = !!(m & 1), rt = !!(m & 2), dn = !!(m & 4), lf = !!(m & 8);
+    const open = (up ? 1 : 0) + (rt ? 1 : 0) + (dn ? 1 : 0) + (lf ? 1 : 0);
+    // 갈림길이거나, 세로/가로가 꺾이는 자리
+    const corner = open >= 3 || (open === 2 && (up || dn) && (lf || rt));
+    if (!corner) return;
+
+    if (!U.chance(this.stageIdx === 0 ? 0.13 : 0.06)) return;
+    const ahead = Math.atan2(this.moveDir.y, this.moveDir.x);
+    this.spawnFigure(this.defaultMode(), false,
+      { angle: ahead, spread: 0.55, min: 68, max: 120 });
   },
 
   updFigure(dt) {
     const F = this.figure;
     if (!F) return;
-    F.t -= dt;
-    if (F.mode === 'distant') {
-      // 다가가면 사라진다. 절대 먼저 다가오지 않는다.
-      const d = U.dist(this.player.x + 4, this.player.y + 4, F.x, F.y);
-      if (d < 46) { this.figure = null; Snd.whoosh(); return; }
+    const P = this.player;
+    const px = P.x + 4, py = P.y + 4;
+
+    if (F.mode === 'inside') {
+      F.t -= dt;
+      if (F.t <= 0) this.figure = null;
+      return;
     }
-    if (F.t <= 0) {
-      this.figure = null;
-      if (F.mode === 'distant') Snd.whoosh();
+
+    if (F.mode === 'watch') {
+      F.t -= dt;
+      if (U.dist(px, py, F.x, F.y) < 46) { this.figure = null; Snd.whoosh(); return; }
+      if (F.t <= 0) { this.figure = null; Snd.whoosh(); }
+      return;
     }
+
+    /* ---- 추격 ---- */
+    const target = this.hiding ? (F.hunt || F.lastSeen) : { x: px, y: py };
+    F.flowT -= dt;
+    if (F.flowT <= 0) { F.flow = this.buildFlow(target); F.flowT = 0.4; }
+
+    const bx = F.x, by = F.y;
+    this.flowStep(F, this.SPEED * this.FIG_SPEED, dt);
+
+    // 갈 길을 못 찾고 굳어버리는 경우가 있다(닿을 수 없는 자리에 선 경우 등).
+    // 그대로 두면 화면 어딘가에 영원히 서 있게 되므로 잠시 뒤 사라지게 한다.
+    if (Math.hypot(F.x - bx, F.y - by) < 0.05) {
+      F.stuckT = (F.stuckT || 0) + dt;
+      if (F.stuckT > 3) { this.figure = null; Snd.whoosh(); return; }
+    } else F.stuckT = 0;
+
+    if (this.hiding) {
+      if (F.hunt) {
+        // 들켰다 — 숨은 자리를 정확히 찾아온다
+        if (U.dist(F.hunt.x, F.hunt.y, F.x, F.y) < 15) { this.death('found'); }
+      } else {
+        F.lostT += dt;
+        if (F.lostT > 6.5) { this.figure = null; Snd.whoosh(); }
+      }
+      return;
+    }
+
+    F.lastSeen.x = px; F.lastSeen.y = py;
+    const d = U.dist(px, py, F.x, F.y);
+    if (d < this.CATCH_D) { this.death('caught'); return; }
+    if (d > this.GIVEUP_D) {
+      F.farT += dt;
+      if (F.farT > 2.5) { this.figure = null; Snd.whoosh(); }
+    } else F.farT = 0;
   },
 
-  /* 손전등이 꺼졌다 깜빡이며 돌아오는 구간 */
+  /* 목표 지점까지의 거리장. 타일이 몇 안 되니 매번 새로 만들어도 싸다. */
+  buildFlow(target) {
+    const map = this.map, W = map.W, H = map.H, T = map.T;
+    let tx = U.clamp((target.x / T) | 0, 0, W - 1);
+    let ty = U.clamp((target.y / T) | 0, 0, H - 1);
+
+    // 목표 칸이 막혀 있으면(소품이 올라간 칸 등) 가장 가까운 갈 수 있는 칸으로 옮긴다.
+    // 여기서 그냥 포기하면 추격자가 그대로 굳어버린다.
+    if (Levels.solid(map, tx, ty)) {
+      let found = null;
+      for (let r = 1; r <= 3 && !found; r++)
+        for (let dy = -r; dy <= r && !found; dy++)
+          for (let dx = -r; dx <= r && !found; dx++) {
+            const nx = tx + dx, ny = ty + dy;
+            if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+            if (!Levels.solid(map, nx, ny)) found = { x: nx, y: ny };
+          }
+      if (!found) return null;
+      tx = found.x; ty = found.y;
+    }
+
+    const dist = new Int32Array(W * H).fill(-1);
+    const q = [tx + ty * W];
+    dist[q[0]] = 0;
+    for (let i = 0; i < q.length; i++) {
+      const c = q[i], x = c % W, y = (c / W) | 0, dv = dist[c];
+      for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const ni = nx + ny * W;
+        if (dist[ni] !== -1 || Levels.solid(map, nx, ny)) continue;
+        dist[ni] = dv + 1;
+        q.push(ni);
+      }
+    }
+    return dist;
+  },
+
+  /* 거리장을 따라 다음 칸 중앙으로 한 걸음 */
+  flowStep(F, sp, dt) {
+    if (!F.flow) return;
+    const map = this.map, T = map.T, W = map.W;
+    const cx = U.clamp((F.x / T) | 0, 0, map.W - 1);
+    const cy = U.clamp(((F.y - 2) / T) | 0, 0, map.H - 1);
+    // 자기가 선 칸에 값이 없어도(막힌 칸에 걸쳐 있을 때) 이웃 중 최소값으로 빠져나온다
+    const here = F.flow[cx + cy * W];
+    let best = here >= 0 ? here : Infinity, bx = 0, by = 0;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = cx + dx, ny = cy + dy;
+      if (nx < 0 || ny < 0 || nx >= map.W || ny >= map.H) continue;
+      const v = F.flow[nx + ny * W];
+      if (v >= 0 && v < best) { best = v; bx = dx; by = dy; }
+    }
+    if (!bx && !by) return;
+
+    const tgx = (cx + bx) * T + T / 2, tgy = (cy + by) * T + T - 2;
+    const dx = tgx - F.x, dy = tgy - F.y;
+    const l = Math.hypot(dx, dy);
+    if (l < 0.5) return;
+    const step = Math.min(l, sp * dt);
+    F.x += dx / l * step;
+    F.y += dy / l * step;
+  },
+
+  /* ---------------- 숨기 ---------------- */
+  nearestContainer(pcx, pcy) {
+    const T = this.map.T;
+    let best = null, bd = 30;
+    for (const pr of this.map.props) {
+      if (!Levels.CONTAINER.has(pr.n)) continue;
+      const d = U.dist(pcx, pcy, pr.tx * T + T / 2, pr.ty * T + T / 2);
+      if (d < bd) { bd = d; best = pr; }
+    }
+    return best;
+  },
+
+  tryHide(pr) {
+    const T = this.map.T, F = this.figure;
+    this.hiding = { pr };
+    this.setHint('');
+    Snd.creak(0.45);
+
+    if (F && F.mode === 'chase') {
+      const d = U.dist(this.player.x + 4, this.player.y + 4, F.x, F.y);
+      if (d < this.SEEN_D) {
+        // 보고 있는 앞에서 들어갔다 — 문을 열러 온다
+        F.hunt = { x: pr.tx * T + T / 2, y: pr.ty * T + T - 2 };
+        F.flowT = 0;
+        Narrator.flash('…봤을 것이다.', { bad: true, dur: 3.6 });
+        return;
+      }
+      F.lostT = 0;
+    }
+    Narrator.flash('숨을 죽였다.', { dur: 2.8 });
+  },
+
+  exitHide() {
+    const F = this.figure;
+    this.hiding = null;
+    Snd.creak(0.35);
+    if (F && F.mode === 'chase' &&
+        U.dist(this.player.x + 4, this.player.y + 4, F.x, F.y) < 34) this.death('caught');
+  },
+
+  /* ---------------- 죽음 ---------------- */
+  death(kind) {
+    if (this.state !== 'play') return;
+    this.state = 'dead';
+    this.locked = true;
+    this.hiding = null;
+    this.searchT = 0;
+    this.setHint('');
+    Narrator.clear();
+    Narrator.clearFlash();
+    Snd.stopBells();
+    Snd.sting();
+    Snd.thump(0.15, 0.9);
+    Snd.setAmbience(0.25, 1.2);
+
+    // 그것을 눈앞에 세운다
+    const P = this.player;
+    this.figure = { x: P.x + 4, y: P.y + 12, mode: 'inside', t: 1e9 };
+
+    const line = kind === 'found'
+      ? '옷장 문이, 밖에서 열렸다.'
+      : '어깨에 손이 닿았다.';
+
+    this.setTimeline([
+      { at: 0.3, fn: () => Narrator.say([line]) },
+      { at: 3.0, fn: () => { this.fadeTo(0, 2.0); } },
+      { at: 5.4, fn: () => Narrator.say(['다시, 골목이었다.'], () => this.restartRun()) }
+    ]);
+  },
+
+  restartRun() {
+    this.dread = 0;
+    this.traces = 0;
+    this.figure = null;
+    Snd.setDread(0);
+    Snd.setAmbience(1, 2);
+    Snd._scheduleBell(4);      // death 에서 멈춘 종을 다시 돌린다
+    this.startStage(0);
+  },
+
+  /* 손전등 : 꺼졌다 깜빡이며 돌아오는 구간 / 숨어 있는 동안은 문틈만큼 */
   torchScale() {
+    if (this.state === 'dead') return Math.max(0.1, 1 - this.tlT * 0.55);
+    if (this.hiding) return 0.3;
     const t = this.torchOutT;
     if (t <= 0) return 1;
     if (t > 0.7) return 0.15;
@@ -610,14 +869,8 @@ const Game = {
       }
     }
 
-    /* --- 목표 문에 은은한 빛 --- */
-    const G = this.goal;
-    if (G && G.type === 'door' && !G.used) {
-      lights.push({
-        x: G.x - cam.x, y: G.y - cam.y + 4,
-        r: 40 + Math.sin(this.time * 1.1) * 4, i: 0.5
-      });
-    }
+    /* 목표(문 / 고양이)에는 빛을 주지 않는다.
+       등대처럼 비춰 주면 찾는 행위가 사라진다 — 손전등으로 직접 쓸어 찾아야 한다. */
 
     /* --- 소품 + 캐릭터를 y 순으로 겹쳐 그린다 --- */
     const order = [];
@@ -628,7 +881,8 @@ const Game = {
       order.push({ y: pr.n === 'bulb' ? 1e9 : pr.y, kind: 'prop', pr, sx, sy });
     }
     if (this.cat && this.cat.alive) order.push({ y: this.cat.y, kind: 'cat' });
-    if (this.player) order.push({ y: this.player.y + this.player.h, kind: 'man' });
+    // 숨어 있는 동안은 주인공을 그리지 않는다 — 상자 문이 닫혀 있는 상태
+    if (this.player && !this.hiding) order.push({ y: this.player.y + this.player.h, kind: 'man' });
     if (this.figure) {
       // 물건 안에서 나타난 경우엔 그 물건에 가리면 안 되므로 맨 나중에
       order.push({ y: this.figure.mode === 'inside' ? 1e8 : this.figure.y, kind: 'figure' });
@@ -652,7 +906,9 @@ const Game = {
         R.outline(SPR.FIGURE, fx - 6, fy - 31);
         R.sprite(SPR.FIGURE, fx - 6, fy - 31);
         // 멀리 서 있는 쪽은 자기 몫의 희미한 빛이 있어야 어둠 속에서 겨우 보인다
-        if (F.mode === 'distant') lights.push({ x: fx, y: fy - 15, r: 36, i: 0.40 });
+        if (F.mode === 'watch') lights.push({ x: fx, y: fy - 15, r: 36, i: 0.40 });
+        // 쫓아오는 쪽은 더 희미하다 — 발소리와 실루엣만으로 거리를 재게 한다
+        else if (F.mode === 'chase') lights.push({ x: fx, y: fy - 15, r: 30, i: 0.30 });
       } else if (o.kind === 'cat') {
         const C = this.cat;
         const cx = Math.round(C.x - cam.x), cy = Math.round(C.y - cam.y);
@@ -664,8 +920,8 @@ const Game = {
           R.outline(SPR.CAT_SIT, cx - 8, cy - 11, C.face < 0);
           R.sprite(SPR.CAT_SIT, cx - 8, cy - 11, C.face < 0);
         }
-        lights.push({ x: cx, y: cy - 3, r: 22, i: 0.9 });
-        lights.push({ x: cx, y: cy - 3, r: 46, i: 0.45 });
+        // 도입 연출에서만 고양이에게 빛을 준다. 마지막 방에서는 직접 찾아야 한다.
+        if (this.state === 'intro') lights.push({ x: cx, y: cy - 3, r: 26, i: 0.5 });
       } else {
         const P = this.player;
         const px = Math.round(P.x - cam.x), py = Math.round(P.y - cam.y);
