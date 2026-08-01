@@ -1116,10 +1116,14 @@ const Game = {
     // 숨어 있는 동안은 주인공을 그리지 않는다 — 상자 문이 닫혀 있는 상태
     if (this.player && !this.hiding) order.push({ y: this.player.y + this.player.h, kind: 'man' });
     // 아직 깨어나지 않고 서 있는 것들. 빛을 내지 않으니 손전등이 닿아야 보인다.
-    for (const s of this.sentries) {
-      const sx = s.x - cam.x, sy = s.y - cam.y;
-      if (sx < -40 || sx > R.W + 40 || sy < -60 || sy > R.H + 40) continue;
-      order.push({ y: s.y, kind: 'figure', f: s });
+    // 이미 다른 그것이 활동 중일 때는 그리지 않는다 — 어차피 깨어날 수 없는데
+    // 정적 조명(가로등·전구) 아래 있으면 정지된 채로 보여 버리기 때문.
+    if (!this.figure) {
+      for (const s of this.sentries) {
+        const sx = s.x - cam.x, sy = s.y - cam.y;
+        if (sx < -40 || sx > R.W + 40 || sy < -60 || sy > R.H + 40) continue;
+        order.push({ y: s.y, kind: 'figure', f: s });
+      }
     }
     if (this.figure) {
       // 물건 안에서 나타난 경우엔 그 물건에 가리면 안 되므로 맨 나중에

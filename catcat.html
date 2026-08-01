@@ -1,0 +1,854 @@
+<title>고양이를 찾아서 — 공략 가이드</title>
+<style>
+  :root{
+    --void:   #0a0b09;
+    --surface:#131510;
+    --panel:  #181a14;
+    --line:   rgba(238,240,234,0.08);
+    --line-2: rgba(238,240,234,0.14);
+    --ink-1:  #eef0e8;
+    --ink-2:  #aeb3a4;
+    --ink-3:  #6d7161;
+    --amber:  #e8a944;
+    --amber-dim: rgba(232,169,68,0.28);
+    --red:    #c1493c;
+    --red-dim: rgba(193,73,60,0.26);
+    --mono: ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    --kr: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  *{box-sizing:border-box;}
+  html{background:var(--void);}
+  body{
+    margin:0;
+    background:var(--void);
+    color:var(--ink-2);
+    font-family:var(--kr);
+    font-size:16px;
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+  }
+  #noise{
+    position:fixed; inset:0; width:100%; height:100%;
+    z-index:0; pointer-events:none; opacity:0.05;
+    image-rendering:pixelated;
+  }
+
+  ::selection{ background:var(--amber-dim); color:var(--ink-1); }
+  a{ color:var(--amber); }
+  a:focus-visible, button:focus-visible, .navlink:focus-visible{
+    outline:2px solid var(--amber); outline-offset:3px; border-radius:2px;
+  }
+
+  h1,h2,h3{ color:var(--ink-1); font-family:var(--kr); font-weight:700; text-wrap:balance; margin:0; }
+  .eyebrow{
+    font-family:var(--mono); font-size:11.5px; letter-spacing:0.14em; text-transform:uppercase;
+    color:var(--amber); display:flex; align-items:center; gap:8px; margin:0 0 10px;
+  }
+  .eyebrow::before{ content:""; width:14px; height:1px; background:var(--amber); display:inline-block; }
+  .num{ font-family:var(--mono); font-variant-numeric:tabular-nums; }
+
+  main{ position:relative; z-index:1; max-width:920px; margin:0 auto; padding:0 20px 100px; }
+
+  /* ---------- NAV ---------- */
+  nav.hud{
+    position:sticky; top:0; z-index:20;
+    background:rgba(10,11,9,0.86); backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line);
+  }
+  .hud-inner{
+    max-width:920px; margin:0 auto; padding:12px 20px;
+    display:flex; gap:18px; overflow-x:auto; scrollbar-width:none;
+  }
+  .hud-inner::-webkit-scrollbar{ display:none; }
+  .navlink{
+    font-family:var(--mono); font-size:12px; letter-spacing:0.06em;
+    color:var(--ink-3); text-decoration:none; white-space:nowrap;
+    padding:4px 2px; border-bottom:1px solid transparent;
+  }
+  .navlink:hover{ color:var(--amber); border-color:var(--amber-dim); }
+
+  /* ---------- HERO ---------- */
+  .hero{
+    position:relative; overflow:hidden;
+    border-bottom:1px solid var(--line);
+    padding:72px 20px 56px;
+    background:
+      radial-gradient(120% 90% at 15% -10%, rgba(232,169,68,0.09), transparent 55%),
+      var(--void);
+  }
+  .hero-inner{ max-width:920px; margin:0 auto; position:relative; }
+  .hero-top{ display:flex; align-items:center; gap:18px; margin-bottom:28px; }
+  #catmark{ image-rendering:pixelated; width:44px; height:44px; flex:none; }
+  .hero h1{ font-size:clamp(28px,5vw,42px); line-height:1.15; letter-spacing:-0.01em; }
+  .hero .sub{
+    font-family:var(--mono); color:var(--ink-3); font-size:13px; letter-spacing:0.06em;
+    margin-top:6px;
+  }
+
+  .briefing{ position:relative; max-width:62ch; margin-top:8px; font-size:15.5px; }
+  .briefing p{ margin:0 0 10px; }
+  .briefing .dim{ color:var(--ink-3); }
+  .briefing .bright{
+    position:absolute; inset:0; margin:0; color:var(--ink-1);
+    -webkit-mask-image: radial-gradient(circle at var(--mx,50%) var(--my,-999px), #fff 0, #fff 90px, transparent 230px);
+    mask-image: radial-gradient(circle at var(--mx,50%) var(--my,-999px), #fff 0, #fff 90px, transparent 230px);
+  }
+  @media (hover:hover) and (pointer:fine){
+    .briefing .bright{ transition: mask-position 60ms linear; }
+  }
+  @media (hover:none){
+    .briefing .bright{ display:none; }
+    .briefing .dim{ color:var(--ink-2); }
+  }
+  .hint-move{ font-family:var(--mono); font-size:11px; color:var(--ink-3); margin-top:14px; }
+  @media (hover:none){ .hint-move{ display:none; } }
+
+  .pillrow{ display:flex; flex-wrap:wrap; gap:10px; margin-top:30px; }
+  .pill{
+    font-family:var(--mono); font-size:12px; letter-spacing:0.04em;
+    color:var(--ink-2); text-decoration:none;
+    border:1px solid var(--line-2); border-radius:999px;
+    padding:7px 14px; transition:border-color 120ms, color 120ms;
+  }
+  .pill:hover{ color:var(--amber); border-color:var(--amber-dim); }
+
+  /* ---------- SECTIONS ---------- */
+  section{ padding:56px 0; border-bottom:1px solid var(--line); }
+  section:last-of-type{ border-bottom:none; }
+  h2{ font-size:22px; margin-bottom:6px; }
+  .section-lede{ color:var(--ink-3); font-size:14.5px; max-width:60ch; margin:0 0 30px; }
+
+  /* overview cards */
+  .cardgrid{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+  @media (max-width:700px){ .cardgrid{ grid-template-columns:1fr; } }
+  .stagecard{
+    background:var(--surface); border:1px solid var(--line); border-radius:6px;
+    padding:18px; display:flex; flex-direction:column; gap:8px;
+  }
+  .stagecard .k{ font-family:var(--mono); font-size:11px; color:var(--ink-3); letter-spacing:0.08em; }
+  .stagecard .t{ color:var(--ink-1); font-weight:700; font-size:16px; }
+  .stagecard .desc{ font-size:13.5px; color:var(--ink-2); }
+  .lockbadge{
+    align-self:flex-start; font-family:var(--mono); font-size:11px;
+    color:var(--red); border:1px solid var(--red-dim); border-radius:3px; padding:2px 7px;
+  }
+  .lockbadge.open{ color:var(--ink-3); border-color:var(--line-2); }
+
+  .ctrlgrid{
+    margin-top:28px; display:grid; grid-template-columns:auto 1fr 1fr; gap:0 22px;
+    background:var(--surface); border:1px solid var(--line); border-radius:6px; padding:18px 20px;
+  }
+  .ctrlgrid .h{ font-family:var(--mono); font-size:11px; color:var(--ink-3); letter-spacing:0.08em; padding-bottom:10px; }
+  .ctrlgrid > div{ padding:9px 0; border-top:1px solid var(--line); font-size:14px; }
+  .ctrlgrid > div:nth-child(-n+3){ border-top:none; }
+  .ctrlgrid .label{ color:var(--ink-1); }
+  kbd{
+    font-family:var(--mono); font-size:12px; background:var(--panel); color:var(--ink-1);
+    border:1px solid var(--line-2); border-bottom-width:2px; border-radius:4px; padding:1px 6px;
+  }
+  @media (max-width:640px){
+    .ctrlgrid{ grid-template-columns:1fr; }
+    .ctrlgrid .h:nth-child(2), .ctrlgrid .h:nth-child(3){ display:none; }
+  }
+
+  /* stage modules */
+  .stage{ padding:64px 0; border-bottom:1px solid var(--line); }
+  .stage-head{ display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:6px; }
+  .stage-head .code{ font-family:var(--mono); color:var(--amber); font-size:13px; letter-spacing:0.1em; }
+  .stage-head h2{ font-size:24px; }
+  .stage-mood{ color:var(--ink-3); font-size:13.5px; margin:4px 0 30px; max-width:60ch; }
+
+  .stage-body{ display:grid; grid-template-columns:minmax(0,420px) 1fr; gap:32px; align-items:start; }
+  @media (max-width:800px){ .stage-body{ grid-template-columns:1fr; } }
+
+  .mapwrap{ background:var(--surface); border:1px solid var(--line); border-radius:6px; padding:14px; }
+  .mapwrap canvas{ width:100%; height:auto; display:block; image-rendering:pixelated; border-radius:2px; }
+  .mapcaption{ font-size:11.5px; color:var(--ink-3); margin-top:10px; line-height:1.5; }
+  .legend{ display:flex; flex-wrap:wrap; gap:10px 16px; margin-top:12px; }
+  .legend .item{ display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--ink-3); }
+  .swatch{ width:10px; height:10px; border-radius:50%; flex:none; }
+
+  .factstrip{ display:flex; flex-wrap:wrap; gap:10px; margin-bottom:22px; }
+  .fact{
+    font-family:var(--mono); font-size:12px; color:var(--ink-2);
+    background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:6px 10px;
+  }
+  .fact b{ color:var(--ink-1); font-weight:600; }
+  .fact.warn{ color:var(--red); border-color:var(--red-dim); }
+  .fact.gold{ color:var(--amber); border-color:var(--amber-dim); }
+
+  .stage-body h3{ font-size:14.5px; color:var(--ink-1); margin-bottom:8px; }
+  .stage-body .block{ margin-bottom:22px; }
+  .stage-body .block:last-child{ margin-bottom:0; }
+  .stage-body p{ margin:0; font-size:14.5px; }
+  .stage-body ul{ margin:8px 0 0; padding-left:18px; font-size:14.5px; }
+  .stage-body li{ margin-bottom:6px; }
+  .stage-body li::marker{ color:var(--amber); }
+
+  /* data tables */
+  .tablewrap{ overflow-x:auto; border:1px solid var(--line); border-radius:6px; }
+  table{ width:100%; border-collapse:collapse; font-size:13.5px; min-width:560px; }
+  thead th{
+    text-align:left; font-family:var(--mono); font-size:11px; letter-spacing:0.06em;
+    color:var(--ink-3); font-weight:500; padding:10px 14px; background:var(--surface);
+    border-bottom:1px solid var(--line-2); white-space:nowrap;
+  }
+  tbody td{ padding:10px 14px; border-bottom:1px solid var(--line); color:var(--ink-2); vertical-align:top; }
+  tbody tr:last-child td{ border-bottom:none; }
+  tbody td.name{ color:var(--ink-1); font-weight:600; white-space:nowrap; }
+  tbody td.val{ font-family:var(--mono); color:var(--amber); white-space:nowrap; font-variant-numeric:tabular-nums; }
+  tbody tr:hover td{ background:rgba(255,255,255,0.02); }
+
+  /* death cards */
+  .deathgrid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:700px){ .deathgrid{ grid-template-columns:1fr; } }
+  .deathcard{
+    background:var(--surface); border:1px solid var(--red-dim); border-radius:6px; padding:20px;
+  }
+  .deathcard .tag{ font-family:var(--mono); font-size:11px; color:var(--red); letter-spacing:0.08em; }
+  .deathcard h3{ color:var(--ink-1); font-size:16px; margin:8px 0 8px; }
+  .deathcard p{ font-size:14px; margin:0; color:var(--ink-2); }
+  .quote{ font-size:13.5px; color:var(--ink-3); font-style:italic; margin-top:10px; }
+
+  .restartnote{
+    margin-top:18px; font-size:13.5px; color:var(--ink-2);
+    border-left:2px solid var(--amber); padding-left:14px;
+  }
+
+  /* sound tips */
+  .tiplist{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:700px){ .tiplist{ grid-template-columns:1fr; } }
+  .tip{ background:var(--surface); border:1px solid var(--line); border-radius:6px; padding:16px 18px; }
+  .tip .k{ font-family:var(--mono); font-size:11px; color:var(--ink-3); letter-spacing:0.06em; }
+  .tip p{ margin:6px 0 0; font-size:14px; }
+  .tip .num{ color:var(--amber); }
+
+  footer{ padding:40px 0 10px; text-align:left; }
+  footer p{ font-size:12.5px; color:var(--ink-3); font-family:var(--mono); margin:0 0 6px; }
+</style>
+
+<canvas id="noise"></canvas>
+
+<nav class="hud">
+  <div class="hud-inner">
+    <a class="navlink" href="#overview">개요</a>
+    <a class="navlink" href="#stage-alley">01 · 골목</a>
+    <a class="navlink" href="#stage-house">02 · 낡은 건물</a>
+    <a class="navlink" href="#stage-cellar">03 · 지하</a>
+    <a class="navlink" href="#itfigure">그것</a>
+    <a class="navlink" href="#death">죽음</a>
+    <a class="navlink" href="#sound">소리</a>
+    <a class="navlink" href="#search">탐색</a>
+  </div>
+</nav>
+
+<main>
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="hero-top">
+        <canvas id="catmark" width="16" height="16"></canvas>
+        <div>
+          <p class="eyebrow">게임 가이드</p>
+          <h1>고양이를 찾아서</h1>
+          <p class="sub">A Monochrome Maze · 공략 &amp; 좌표 가이드</p>
+        </div>
+      </div>
+
+      <div class="briefing">
+        <p class="dim">
+          도망친 고양이를 따라 밤의 공원에서 골목으로, 낡은 건물로, 지하로 내려간다.
+          손전등이 닿는 곳만 보인다. 문도 고양이도 스스로 빛나지 않는다 — 직접 쓸어 찾아야 한다.
+          아래는 세 구간의 시작·목표·열쇠 좌표와, 그것이 정확히 어디서 나타나고 어떻게 움직이는지를
+          게임 소스 코드 기준으로 정리한 것이다.
+        </p>
+        <p class="bright" aria-hidden="true">
+          도망친 고양이를 따라 밤의 공원에서 골목으로, 낡은 건물로, 지하로 내려간다.
+          손전등이 닿는 곳만 보인다. 문도 고양이도 스스로 빛나지 않는다 — 직접 쓸어 찾아야 한다.
+          아래는 세 구간의 시작·목표·열쇠 좌표와, 그것이 정확히 어디서 나타나고 어떻게 움직이는지를
+          게임 소스 코드 기준으로 정리한 것이다.
+        </p>
+      </div>
+      <p class="hint-move">— 마우스를 문단 위에서 움직여 보세요 · 손전등처럼 —</p>
+
+      <div class="pillrow">
+        <a class="pill" href="#stage-alley">하나 · 골목 →</a>
+        <a class="pill" href="#stage-house">둘 · 낡은 건물 →</a>
+        <a class="pill" href="#stage-cellar">셋 · 지하 →</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===================== OVERVIEW ===================== -->
+  <section id="overview">
+    <p class="eyebrow">개요</p>
+    <h2>진행 순서와 잠금 조건</h2>
+    <p class="section-lede">
+      문을 찾기만 하면 넘어가는 건 1구간뿐이다. 아래로 갈수록 문을 여는 조건이 하나씩 붙는다.
+      열쇠와 조각은 확률로 나오지 않는다 — 정해진 소품 안에 고정되어 있다.
+    </p>
+
+    <div class="cardgrid">
+      <div class="stagecard">
+        <span class="k">STAGE 01</span>
+        <span class="t">하나 · 골목</span>
+        <p class="desc">뒷골목 막다른 곳의 문을 찾는다. 그것은 서서 바라보기만 한다.</p>
+        <span class="lockbadge open">잠김 없음</span>
+      </div>
+      <div class="stagecard">
+        <span class="k">STAGE 02</span>
+        <span class="t">둘 · 낡은 건물</span>
+        <p class="desc">지하로 내려가는 문이 잠겨 있다. 여덟 방 중 하나, 옷장 속에 열쇠가 있다.</p>
+        <span class="lockbadge">열쇠 × 1 필요</span>
+      </div>
+      <div class="stagecard">
+        <span class="k">STAGE 03</span>
+        <span class="t">셋 · 지하</span>
+        <p class="desc">고양이가 있는 챔버 앞을 철문이 막는다. 조각 세 개를 모아야 열린다.</p>
+        <span class="lockbadge">조각 × 3 필요</span>
+      </div>
+    </div>
+
+    <div class="ctrlgrid">
+      <div class="h"></div>
+      <div class="h">PC</div>
+      <div class="h">휴대폰 (가로모드)</div>
+
+      <div class="label">이동</div>
+      <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 또는 방향키</div>
+      <div>화면 왼쪽 절반을 끌기 — 민 정도만큼 속도가 붙는다</div>
+
+      <div class="label">열기 · 뒤지기 · 숨기 · 나오기</div>
+      <div><kbd>E</kbd></div>
+      <div>오른쪽 절반 또는 <kbd>E</kbd> 버튼</div>
+
+      <div class="label">연출 건너뛰기</div>
+      <div><kbd>Space</kbd></div>
+      <div><kbd>E</kbd></div>
+
+      <div class="label">다시 시작 (엔딩 후)</div>
+      <div><kbd>R</kbd></div>
+      <div><kbd>E</kbd></div>
+    </div>
+  </section>
+
+  <!-- ===================== STAGE: ALLEY ===================== -->
+  <section class="stage" id="stage-alley">
+    <div class="stage-head">
+      <span class="code">STAGE 01 / ALLEY</span>
+      <h2>하나 · 골목</h2>
+    </div>
+    <p class="stage-mood">
+      46×30 타일. 블록을 도는 순환 통로와 막다른 뒷길. 그것은 이 구간에서 <b style="color:var(--ink-1)">움직이지 않는다</b> —
+      모퉁이를 돌면 서서 바라보기만 하다가 사라진다.
+    </p>
+
+    <div class="stage-body">
+      <div class="mapwrap">
+        <canvas id="map-alley"></canvas>
+        <div class="legend">
+          <div class="item"><span class="swatch" style="background:var(--amber)"></span>시작 → 목표</div>
+          <div class="item"><span class="swatch" style="background:var(--red)"></span>그것 (정지 응시)</div>
+          <div class="item"><span class="swatch" style="background:var(--ink-3);border-radius:2px"></span>철망 (막힌 길)</div>
+        </div>
+        <p class="mapcaption">점선은 순서 참고용이며, 실제 골목 벽 형태를 그대로 그린 것은 아니다.</p>
+      </div>
+
+      <div>
+        <div class="factstrip">
+          <span class="fact">시작 <b class="num">(43, 29)</b></span>
+          <span class="fact gold">목표 문 <b class="num">(14, 11)</b></span>
+          <span class="fact">그것 모드 <b>WATCH</b></span>
+          <span class="fact">잠금 없음</span>
+        </div>
+
+        <div class="block">
+          <h3>목표</h3>
+          <p>오른쪽 아래 시작 지점에서 대각선 반대편, 왼쪽 위 뒷골목의 문으로 향한다. 잠겨 있지 않으므로 도착해서 <kbd>E</kbd>만 누르면 다음 구간이다.</p>
+        </div>
+
+        <div class="block">
+          <h3>그것 — 이 구간만의 규칙</h3>
+          <ul>
+            <li>정지 상태로 좌표 <span class="num">(23, 24)</span> 부근에 배치되어 있다. 손전등이 닿기 전에는 보이지 않는다.</li>
+            <li>132px 안으로 들어가면 고개를 돌려 바라본다. 그뿐이다 — 쫓아오지 않는다.</li>
+            <li>46px 안까지 다가가거나 3.4초가 지나면 스스로 사라진다.</li>
+            <li>이 구간에서는 잡히지 않는다. 마주쳐도 침착하게 우회하면 된다.</li>
+          </ul>
+        </div>
+
+        <div class="block">
+          <h3>공략 팁</h3>
+          <p>철망으로 막힌 세 갈래 — <span class="num">(10,22)</span>, <span class="num">(35,14)</span>, <span class="num">(19,9)</span> — 는 진짜 막다른 길이니 되돌아 나와야 한다. 목표 문 앞에서 도는 순간 그것과 마주칠 확률이 높은데, 놀랄 필요 없이 문까지 걸어가면 된다.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== STAGE: HOUSE ===================== -->
+  <section class="stage" id="stage-house">
+    <div class="stage-head">
+      <span class="code">STAGE 02 / HOUSE</span>
+      <h2>둘 · 낡은 건물</h2>
+    </div>
+    <p class="stage-mood">
+      46×30 타일, 복도 두 개와 방 여덟 개(A~H). 지하로 내려가는 문은 잠겨 있고, 이때부터 그것이 <b style="color:var(--ink-1)">따라오기 시작</b>한다 — 주인공 속도의 0.7배.
+    </p>
+
+    <div class="stage-body">
+      <div class="mapwrap">
+        <canvas id="map-house"></canvas>
+        <div class="legend">
+          <div class="item"><span class="swatch" style="background:var(--amber)"></span>시작 → 열쇠 → 목표</div>
+          <div class="item"><span class="swatch" style="background:var(--red)"></span>그것 (대기)</div>
+          <div class="item"><span class="swatch" style="background:var(--red);opacity:.5;border:1px dashed var(--red)"></span>열쇠를 집으면 등장</div>
+          <div class="item"><span class="swatch" style="background:transparent;border:1px solid var(--ink-3);border-radius:2px"></span>숨을 곳</div>
+        </div>
+        <p class="mapcaption">밝은 띠는 두 복도(세로/가로). 점선은 순서 참고용.</p>
+      </div>
+
+      <div>
+        <div class="factstrip">
+          <span class="fact">시작 <b class="num">(4, 4)</b> · A방</span>
+          <span class="fact gold">열쇠 <b class="num">(42, 18)</b> · H방 옷장</span>
+          <span class="fact gold">목표 문 <b class="num">(13, 16)</b> · F방</span>
+          <span class="fact warn">그것 모드 <b>CHASE</b> · 0.7배속</span>
+        </div>
+
+        <div class="block">
+          <h3>열쇠</h3>
+          <p>H 창고 방 옷장 속에 고정되어 있다. <span class="num">(42, 18)</span> 소품을 뒤지면 곧바로 열쇠를 얻는다 — 확률이 아니라 이 자리에 항상 있다. 여덟 개 방을 다 뒤질 필요 없이 이 한 자리만 알면 된다.</p>
+        </div>
+
+        <div class="block">
+          <h3>주의 — 열쇠를 여는 순간</h3>
+          <p>옷장을 여는 즉시 그것이 근처 좌표 <span class="num">(41, 25)</span>에 나타나 추격이 시작된다. 열쇠를 집기 전에 도주 경로(가까운 숨을 곳)를 눈에 담아두는 편이 좋다.</p>
+        </div>
+
+        <div class="block">
+          <h3>배치된 그것 (대기 상태)</h3>
+          <p>추가로 두 지점 <span class="num">(30, 7)</span>, <span class="num">(6, 24)</span>에 정지 상태로 서 있다가, 132px 안에 들어오면 추격으로 전환된다.</p>
+        </div>
+
+        <div class="block">
+          <h3>숨을 곳 (사물함)</h3>
+          <p><span class="num">(2,2)</span> · <span class="num">(26,10)</span> · <span class="num">(36,2)</span> · <span class="num">(2,17)</span> · <span class="num">(12,27)</span> · <span class="num">(43,26)</span> — 총 여섯 곳. 84px 밖에서 들어가면 들키지 않는다.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== STAGE: CELLAR ===================== -->
+  <section class="stage" id="stage-cellar">
+    <div class="stage-head">
+      <span class="code">STAGE 03 / CELLAR</span>
+      <h2>셋 · 지하</h2>
+    </div>
+    <p class="stage-mood">
+      50×30 타일, 챔버 넷과 보일러실을 통로로 잇는다. 고양이가 있는 마지막 챔버 앞을 철문이 막고 있고, 우회로는 없다.
+    </p>
+
+    <div class="stage-body">
+      <div class="mapwrap">
+        <canvas id="map-cellar"></canvas>
+        <div class="legend">
+          <div class="item"><span class="swatch" style="background:var(--amber)"></span>시작 → 조각 → 철문 → 고양이</div>
+          <div class="item"><span class="swatch" style="background:var(--red)"></span>그것 (대기)</div>
+          <div class="item"><span class="swatch" style="background:var(--red);opacity:.5;border:1px dashed var(--red)"></span>철문을 열면 등장</div>
+          <div class="item"><span class="swatch" style="background:var(--ink-1);border-radius:1px"></span>철문 위치</div>
+        </div>
+        <p class="mapcaption">조각 세 개는 순서 상관없이 모으면 된다. 점선은 순서 참고용.</p>
+      </div>
+
+      <div>
+        <div class="factstrip">
+          <span class="fact">시작 <b class="num">(45, 6)</b> · 계단</span>
+          <span class="fact gold">목표 <b class="num">(7, 22)</b> · 고양이</span>
+          <span class="fact warn">철문 <b class="num">(17, 19)</b></span>
+          <span class="fact warn">그것 모드 <b>CHASE</b> · 0.7배속</span>
+        </div>
+
+        <div class="block">
+          <h3>열쇠 조각 3개 — 흩어진 위치</h3>
+          <ul>
+            <li><span class="num">(12, 4)</span> — 챔버 1</li>
+            <li><span class="num">(23, 25)</span> — 보일러실</li>
+            <li><span class="num">(37, 18)</span> — 마지막 방</li>
+          </ul>
+          <p>서로 다른 챔버에 하나씩 고정되어 있어, 자연히 지하 전체를 한 바퀴 돌게 된다. 순서는 상관없다 — 셋을 다 모아야 철문이 열린다.</p>
+        </div>
+
+        <div class="block">
+          <h3>철문</h3>
+          <p><span class="num">(17, 19)</span> 통로를 가로막는 유일한 길목. 조각을 다 모으기 전엔 다가가도 "자물쇠가 꿈쩍도 하지 않는다"는 반응만 나온다. 열리는 순간 쇠 긁는 소리가 멀리까지 퍼지고, 좌표 <span class="num">(20, 24)</span>에 그것이 등장한다.</p>
+        </div>
+
+        <div class="block">
+          <h3>목표</h3>
+          <p>철문 너머 마지막 챔버, 좌표 <span class="num">(7, 22)</span>에 고양이가 있다. 이 챔버 안에도 그것이 대기 중이니 접근할 때 주의한다.</p>
+        </div>
+
+        <div class="block">
+          <h3>배치된 그것 (대기 상태)</h3>
+          <p><span class="num">(29, 16)</span> · <span class="num">(44, 22)</span> · <span class="num">(12, 18)</span> — 조각을 모으러 다니는 동선 곳곳에 서 있다.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== IT MECHANICS ===================== -->
+  <section id="itfigure">
+    <p class="eyebrow">그것</p>
+    <h2>행동 메커니즘 상세</h2>
+    <p class="section-lede">
+      확률로 튀어나오지 않는다. 출현 자리는 전부 좌표로 고정되어 있고, 같은 판을 다시 해도 같은 곳에서 같은 것이 나온다.
+      아래는 상태 전환에 쓰이는 실제 수치다.
+    </p>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>수치</th><th>값</th><th>의미</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="name">반응 거리 (WAKE)</td><td class="val">132px</td><td>대기 중인 그것에 이 거리 안으로 들어가면 고개를 돌린다.</td></tr>
+          <tr><td class="name">목격 판정 반경 (SEEN)</td><td class="val">84px</td><td>숨는 순간 그것과의 거리. 이 안이면 들어가는 걸 목격당한다.</td></tr>
+          <tr><td class="name">추격 속도</td><td class="val">0.7×</td><td>플레이어 이동속도(62px/s) 대비. 대략 43px/s.</td></tr>
+          <tr><td class="name">들켰을 때 접근 속도 (CREEP)</td><td class="val">0.30×</td><td>숨은 곳을 목격했을 때, 서두르지 않고 걸어오는 속도.</td></tr>
+          <tr><td class="name">포기 거리 / 시간 (GIVEUP)</td><td class="val">210px / 2.5초</td><td>이만큼 벌린 채 유지하면 추격을 포기하고 사라진다.</td></tr>
+          <tr><td class="name">붙잡힘 거리 (CATCH)</td><td class="val">13px</td><td>추격 중 이 거리까지 좁혀지면 즉시 사망.</td></tr>
+          <tr><td class="name">스치는 거리 (NEAR MISS)</td><td class="val">40px</td><td>못 본 채 서성일 때 문 앞을 스치면 발소리가 한 번 멎는다.</td></tr>
+          <tr><td class="name">서성이는 시간 (PROWL)</td><td class="val">9.5초</td><td>목격하지 못했을 때, 마지막으로 본 자리 근처를 서성이다 사라진다.</td></tr>
+          <tr><td class="name">도착 후 사망까지</td><td class="val">1.1초</td><td>목격 상태로 숨은 곳에 도착한 뒤, 이 시간이 지나면 문이 열린다.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tiplist" style="margin-top:20px;">
+      <div class="tip">
+        <span class="k">WATCH · 하나 · 골목</span>
+        <p>정지 상태. 바라보기만 하다가 스스로 사라진다. 위협이 아니다.</p>
+      </div>
+      <div class="tip">
+        <span class="k">CHASE · 둘·셋 구간</span>
+        <p>BFS 경로로 플레이어를 추적한다. <span class="num">210px</span>를 <span class="num">2.5초</span> 벌리면 따돌릴 수 있다.</p>
+      </div>
+      <div class="tip">
+        <span class="k">HUNT · 숨었는데 들켰을 때</span>
+        <p><span class="num">0.30배</span> 속도로 다가온다. 나올 수 없다 — 문이 열릴 때까지 안에서 들어야 한다.</p>
+      </div>
+      <div class="tip">
+        <span class="k">PROWL · 숨었는데 못 봤을 때</span>
+        <p><span class="num">9.5초</span> 서성이다 사라진다. 마지막으로 본 자리는 실제 위치보다 약 0.8초 뒤처져 있다.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== DEATH ===================== -->
+  <section id="death">
+    <p class="eyebrow">죽음과 재시작</p>
+    <h2>두 가지 죽는 방법</h2>
+
+    <div class="deathgrid">
+      <div class="deathcard">
+        <span class="tag">CAUGHT</span>
+        <h3>붙잡힘</h3>
+        <p>추격 중 거리가 13px까지 좁혀지거나, 목격당한 채 숨은 곳에서 나오는 순간 40px 이내에 그것이 있으면 즉시 사망한다.</p>
+        <p class="quote">"어깨에 손이 닿았다."</p>
+      </div>
+      <div class="deathcard">
+        <span class="tag">FOUND</span>
+        <h3>들킴</h3>
+        <p>숨는 순간을 목격당한 뒤(84px 안), 그것이 숨은 자리에 도착해 1.1초가 지나면 사망한다. 이때는 나올 수 없다.</p>
+        <p class="quote">"문이, 밖에서 열렸다."</p>
+      </div>
+    </div>
+
+    <p class="restartnote">
+      죽으면 항상 <b style="color:var(--ink-1)">1구간(골목)</b>부터 다시 시작한다 — 얼마나 진행했든 상관없이.
+      쌓아둔 불안도와 흔적 기록도 함께 초기화된다.
+    </p>
+  </section>
+
+  <!-- ===================== SOUND ===================== -->
+  <section id="sound">
+    <p class="eyebrow">소리로 읽는 정보</p>
+    <h2>화면엔 게이지가 없다</h2>
+    <p class="section-lede">체력바도 인벤토리도 없다. 상태는 전부 소리와 손전등 크기로만 드러난다.</p>
+
+    <div class="tiplist">
+      <div class="tip">
+        <span class="k">발소리</span>
+        <p>시간이 아니라 이동 거리 <span class="num">27px</span>마다 한 번 난다. 벽에 막혀 못 움직이면 소리도 안 난다.</p>
+      </div>
+      <div class="tip">
+        <span class="k">심장박동</span>
+        <p>추격 중에는 그것과의 거리에 따라 박동 간격이 빨라진다 — 간격 자체가 곧 거리다.</p>
+      </div>
+      <div class="tip">
+        <span class="k">종소리</span>
+        <p>평소 6~14초마다 불규칙하게 울리다가, 추격이 시작되면 멎는다. 익숙한 소리가 사라지는 게 신호다.</p>
+      </div>
+      <div class="tip">
+        <span class="k">고양이 울음</span>
+        <p>목표 방향으로 패닝되어 <span class="num">7.5~13초</span> 간격으로 들린다. 유일한 방향 힌트다.</p>
+      </div>
+      <div class="tip">
+        <span class="k">문 여닫힘</span>
+        <p><span class="num">22~44초</span> 간격으로 어딘가에서 삐걱대거나(60%) 쿵 소리(40%)가 희미하게 난다 — 그것과 무관한 배경음.</p>
+      </div>
+      <div class="tip">
+        <span class="k">손전등</span>
+        <p>그것이 가까워질수록 반경이 최대 24%까지 오므라들고, 아주 가까우면 떨린다.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== SEARCH ===================== -->
+  <section id="search">
+    <p class="eyebrow">탐색</p>
+    <h2>상자를 열면 무엇이 나오나</h2>
+    <p class="section-lede">
+      수색은 <span class="num">0.9초</span>가 걸린다. 열쇠·조각이 든 소품을 뒤진 게 아니라면, 결과는 아래 확률로 갈린다.
+    </p>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>결과</th><th>확률</th><th>내용</th></tr></thead>
+        <tbody>
+          <tr><td class="name">허탕</td><td class="val">55%</td><td>아무것도 없다.</td></tr>
+          <tr><td class="name">흔적</td><td class="val">14%</td><td>고양이가 지나간 흔적 — 엔딩에 영향을 준다.</td></tr>
+          <tr><td class="name">소음</td><td class="val">16%</td><td>놀라게 하는 작은 소리만 난다.</td></tr>
+          <tr><td class="name">오싹함</td><td class="val">15%</td><td>아래 다섯 중 하나가 랜덤하게 발생.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tiplist" style="margin-top:20px;">
+      <div class="tip"><span class="k">FIGURE</span><p>그 자리에서 그것이 즉시 걸어 나온다. 2구간부터는 그대로 추격으로 이어진다.</p></div>
+      <div class="tip"><span class="k">TORCH</span><p>손전등이 <span class="num">2.1초</span> 동안 완전히 꺼진다.</p></div>
+      <div class="tip"><span class="k">BELL</span><p>귀 바로 옆에서 종소리가 울린다.</p></div>
+      <div class="tip"><span class="k">DEEP</span><p>낮은 스팅 사운드가 깔린다.</p></div>
+      <div class="tip"><span class="k">기본</span><p>어딘가에서 문이 쾅 닫히는 소리.</p></div>
+    </div>
+
+    <p class="restartnote">
+      열쇠와 조각만은 이 확률에서 예외다 — <span class="num">keyProps</span> 좌표의 소품 안에 항상 고정되어 있다.
+      못 찾으면 진행이 막히는 물건을 난수에 맡기지 않는다는 설계다.
+    </p>
+  </section>
+
+  <footer>
+    <p>고양이를 찾아서 — A Monochrome Maze</p>
+    <p>이 가이드는 게임 소스 코드(js/levels.js, js/game.js, js/audio.js) 기준으로 작성되었다.</p>
+  </footer>
+</main>
+
+<script>
+(function(){
+  // ---------- hero spotlight ----------
+  var briefing = document.querySelector('.briefing');
+  if (briefing && window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+    briefing.addEventListener('mousemove', function(e){
+      var r = briefing.getBoundingClientRect();
+      briefing.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+      briefing.style.setProperty('--my', (e.clientY - r.top) + 'px');
+    });
+    briefing.addEventListener('mouseleave', function(){
+      briefing.style.setProperty('--my', '-999px');
+    });
+  }
+
+  // ---------- background bayer-dither texture ----------
+  var BAYER = [
+    [0,32,8,40,2,34,10,42],[48,16,56,24,50,18,58,26],
+    [12,44,4,36,14,46,6,38],[60,28,52,20,62,30,54,22],
+    [3,35,11,43,1,33,9,41],[51,19,59,27,49,17,57,25],
+    [15,47,7,39,13,45,5,37],[63,31,55,23,61,29,53,21]
+  ];
+  var nz = document.getElementById('noise');
+  function paintNoise(){
+    var w = window.innerWidth, h = window.innerHeight;
+    nz.width = 96; nz.height = Math.round(96 * h / w);
+    var ctx = nz.getContext('2d');
+    var cw = nz.width, ch = nz.height;
+    for (var y=0;y<ch;y++){
+      for (var x=0;x<cw;x++){
+        var v = BAYER[y%8][x%8] / 63;
+        var g = Math.round(120 + v*90);
+        ctx.fillStyle = 'rgb('+g+','+g+','+g+')';
+        ctx.fillRect(x,y,1,1);
+      }
+    }
+    nz.style.width = w+'px'; nz.style.height = h+'px';
+  }
+  paintNoise();
+  window.addEventListener('resize', paintNoise);
+
+  // ---------- pixel cat mark ----------
+  var CAT = [
+    "0000000000000000",
+    "0000000000000000",
+    "0001100000000000",
+    "0011110000000000",
+    "0111111000000000",
+    "0111111100000000",
+    "0111111110000000",
+    "0011111110000000",
+    "0001111111000000",
+    "0000111111100000",
+    "0000011111111000",
+    "0000001111111100",
+    "0000000111111110",
+    "0000000011111111",
+    "0000000001111111",
+    "0000000000111111"
+  ];
+  var cm = document.getElementById('catmark');
+  var cctx = cm.getContext('2d');
+  cctx.fillStyle = '#e8a944';
+  for (var yy=0; yy<16; yy++){
+    for (var xx=0; xx<16; xx++){
+      if (CAT[yy][xx] === '1') cctx.fillRect(xx,yy,1,1);
+    }
+  }
+
+  // ---------- map renderer ----------
+  var SCALE = 4;
+  var COL = {
+    line:'rgba(238,240,234,0.10)', corridor:'rgba(238,240,234,0.05)',
+    ink3:'#6d7161', ink1:'#eef0e8',
+    amber:'#e8a944', amberDim:'rgba(232,169,68,0.30)',
+    red:'#c1493c'
+  };
+
+  function drawMap(id, cfg){
+    var cv = document.getElementById(id);
+    if (!cv) return;
+    var W = cfg.w, H = cfg.h;
+    cv.width = W*SCALE; cv.height = H*SCALE;
+    var ctx = cv.getContext('2d');
+
+    // floor
+    ctx.fillStyle = '#0d0e0b';
+    ctx.fillRect(0,0,cv.width,cv.height);
+
+    // corridors (optional tint)
+    if (cfg.corridors){
+      ctx.fillStyle = COL.corridor;
+      cfg.corridors.forEach(function(r){
+        ctx.fillRect(r[0]*SCALE, r[1]*SCALE, r[2]*SCALE, r[3]*SCALE);
+      });
+    }
+
+    // grid
+    ctx.strokeStyle = COL.line;
+    ctx.lineWidth = 1;
+    for (var gx=0; gx<=W; gx+=4){
+      ctx.beginPath(); ctx.moveTo(gx*SCALE+0.5,0); ctx.lineTo(gx*SCALE+0.5,H*SCALE); ctx.stroke();
+    }
+    for (var gy=0; gy<=H; gy+=4){
+      ctx.beginPath(); ctx.moveTo(0,gy*SCALE+0.5); ctx.lineTo(W*SCALE,gy*SCALE+0.5); ctx.stroke();
+    }
+
+    // fences (blocked, X)
+    if (cfg.fences){
+      ctx.strokeStyle = COL.ink3; ctx.lineWidth = 2;
+      cfg.fences.forEach(function(p){
+        var x = p[0]*SCALE, y = p[1]*SCALE;
+        ctx.beginPath();
+        ctx.moveTo(x-3,y-3); ctx.lineTo(x+3,y+3);
+        ctx.moveTo(x+3,y-3); ctx.lineTo(x-3,y+3);
+        ctx.stroke();
+      });
+    }
+
+    // gate bar
+    if (cfg.gate){
+      ctx.fillStyle = COL.ink1;
+      ctx.fillRect(cfg.gate[0]*SCALE-1, cfg.gate[1]*SCALE, 3, cfg.gate[2]*SCALE);
+    }
+
+    // sequence dashed connector (order-only, not literal path)
+    if (cfg.sequence && cfg.sequence.length > 1){
+      ctx.setLineDash([3,3]);
+      ctx.strokeStyle = COL.amberDim;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      cfg.sequence.forEach(function(p,i){
+        var x = p[0]*SCALE, y = p[1]*SCALE;
+        if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      });
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // lockers (hide spots)
+    if (cfg.lockers){
+      ctx.strokeStyle = COL.ink3; ctx.lineWidth = 1.5;
+      cfg.lockers.forEach(function(p){
+        ctx.strokeRect(p[0]*SCALE-3, p[1]*SCALE-3, 6, 6);
+      });
+    }
+
+    // sentries (static "it")
+    if (cfg.sentries){
+      cfg.sentries.forEach(function(p){
+        var x = p[0]*SCALE, y = p[1]*SCALE;
+        ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2);
+        ctx.fillStyle = COL.red; ctx.fill();
+        ctx.beginPath(); ctx.arc(x,y,7,0,Math.PI*2);
+        ctx.strokeStyle = 'rgba(193,73,60,0.4)'; ctx.lineWidth=1.5; ctx.stroke();
+      });
+    }
+
+    // trigger / gate spawn (dashed ring)
+    if (cfg.triggerSpawn){
+      cfg.triggerSpawn.forEach(function(p){
+        var x = p[0]*SCALE, y = p[1]*SCALE;
+        ctx.setLineDash([2,2]);
+        ctx.strokeStyle = COL.red; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(x,y,6,0,Math.PI*2); ctx.stroke();
+        ctx.setLineDash([]);
+      });
+    }
+
+    // numbered sequence points
+    if (cfg.sequence){
+      cfg.sequence.forEach(function(p,i){
+        var x = p[0]*SCALE, y = p[1]*SCALE;
+        ctx.beginPath(); ctx.arc(x,y,6,0,Math.PI*2);
+        ctx.fillStyle = COL.amber; ctx.fill();
+        ctx.fillStyle = '#0a0b09';
+        ctx.font = 'bold 8px monospace';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(String(i+1), x, y+0.5);
+      });
+    }
+  }
+
+  drawMap('map-alley', {
+    w:46, h:30,
+    fences:[[10,22],[35,14],[19,9]],
+    sentries:[[23,24]],
+    sequence:[[43,29],[14,11]]
+  });
+
+  drawMap('map-house', {
+    w:46, h:30,
+    corridors:[[21,2,3,26],[2,13,42,3]],
+    sentries:[[30,7],[6,24]],
+    triggerSpawn:[[41,25]],
+    lockers:[[2,2],[26,10],[36,2],[2,17],[12,27],[43,26]],
+    sequence:[[4,4],[42,18],[13,16]]
+  });
+
+  drawMap('map-cellar', {
+    w:50, h:30,
+    gate:[17,19,2],
+    sentries:[[29,16],[44,22],[12,18]],
+    triggerSpawn:[[20,24]],
+    sequence:[[45,6],[12,4],[23,25],[37,18],[17,19],[7,22]]
+  });
+})();
+</script>
