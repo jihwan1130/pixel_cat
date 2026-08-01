@@ -274,41 +274,153 @@ const Snd = {
   },
 
   /* 발소리 — 터벅터벅.
-     저역이 실린 무게 + 신발이 바닥을 끄는 잡음. 잔향을 넉넉히 실어
-     빈 공간에서 자기 발소리가 되돌아오게 한다.
+     저역이 실린 무게 + 신발이 바닥을 긁는 잡음 + 바닥에 닿는 순간의 짧은 어택.
+     잔향을 넉넉히 실어 빈 공간에서 자기 발소리가 되돌아오게 한다.
      좌우 발을 번갈아 조금씩 다르게 낸다 — 똑같은 소리가 반복되면
-     발소리가 아니라 메트로놈으로 들린다. */
-  step() {
+     발소리가 아니라 메트로놈으로 들린다.
+     theme 으로 바닥 재질이 바뀐다 : 아스팔트 / 마룻바닥 / 콘크리트. */
+  SURFACE: {
+    alley:  { f0: 96,  hp: 1500, atk: 0.070, drag: 760,  body: 1.00 },
+    house:  { f0: 116, hp: 900,  atk: 0.052, drag: 560,  body: 1.10 },  // 널이 울린다
+    cellar: { f0: 88,  hp: 2300, atk: 0.090, drag: 1150, body: 0.92 },  // 돌바닥 — 딱딱하고 멀리 퍼진다
+    park:   { f0: 92,  hp: 1200, atk: 0.055, drag: 700,  body: 0.95 }
+  },
+
+  step(theme) {
     if (!this.ctx) return;
     const ctx = this.ctx, t = ctx.currentTime;
+    const S = this.SURFACE[theme] || this.SURFACE.alley;
     this._foot = !this._foot;
     const heavy = this._foot;
+    const w = heavy ? 1 : 0.78;
 
     // 몸무게가 실리는 낮은 쿵
     const o = ctx.createOscillator(); o.type = 'sine';
-    const f0 = (heavy ? 104 : 91) * U.rand(0.97, 1.03);
+    const f0 = S.f0 * (heavy ? 1.08 : 0.95) * U.rand(0.97, 1.03);
     o.frequency.setValueAtTime(f0, t);
     o.frequency.exponentialRampToValueAtTime(f0 * 0.42, t + 0.13);
     const og = ctx.createGain();
     og.gain.setValueAtTime(0.0001, t);
-    og.gain.exponentialRampToValueAtTime(heavy ? 0.105 : 0.078, t + 0.012);
-    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.21);
+    og.gain.exponentialRampToValueAtTime(0.24 * w * S.body, t + 0.012);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
     o.connect(og);
+
+    // 뒤꿈치가 바닥에 닿는 순간 — 이게 있어야 "발소리" 로 들린다
+    const ak = ctx.createBufferSource(); ak.buffer = this._noise(0.06);
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = S.hp;
+    const ag = ctx.createGain();
+    ag.gain.setValueAtTime(S.atk * w, t);
+    ag.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    ak.connect(hp); hp.connect(ag);
 
     // 신발 바닥이 끌리는 소리
     const ns = ctx.createBufferSource(); ns.buffer = this._noise(0.24);
     const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = U.rand(560, 980); lp.Q.value = 1.2;
+    lp.type = 'lowpass'; lp.frequency.value = S.drag * U.rand(0.85, 1.2); lp.Q.value = 1.2;
     const ng = ctx.createGain();
     ng.gain.setValueAtTime(0.0001, t);
-    ng.gain.exponentialRampToValueAtTime(heavy ? 0.055 : 0.041, t + 0.009);
+    ng.gain.exponentialRampToValueAtTime(0.115 * w, t + 0.009);
     ng.gain.exponentialRampToValueAtTime(0.0001, t + U.rand(0.14, 0.21));
     ns.connect(lp); lp.connect(ng);
 
-    this._out(og, 0.55, 0.5);
-    this._out(ng, 0.5, 0.55);
+    this._out(og, 0.70, 0.45);
+    this._out(ag, 0.80, 0.55);
+    this._out(ng, 0.65, 0.50);
     o.start(t); o.stop(t + 0.28);
-    ns.start(t);
+    ak.start(t); ns.start(t);
+  },
+
+  /* 열쇠 / 조각을 집었다 — 금속이 한 번 맑게 울린다 */
+  pickup() {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    // 세 배음이 거의 동시에 서고 잔향까지 겹치므로 개별 게인은 아주 작아야 한다.
+    // 크게 잡으면 마스터에서 그대로 잘린다 — 실제로 잘렸다.
+    [1174.7, 1760, 2637].forEach((f, i) => {
+      const at = t + i * 0.012;
+      const o = ctx.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(f * U.rand(0.995, 1.005), at);
+      const g = ctx.createGain();
+      // 게인 파라미터의 기본값은 1 이다. 첫 이벤트를 뒤로 미루면
+      // 그때까지 원음이 그대로 나가 딸깍 하고 잘린다 — t 에서 먼저 눌러 둔다.
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(0.30 / (i + 1), at + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 1.1 - i * 0.25);
+      o.connect(g);
+      this._out(g, 0.55, 0.40);
+      o.start(at); o.stop(t + 1.3);
+    });
+    // 쇠붙이가 서로 부딪는 잔소리
+    for (let i = 0; i < 3; i++) {
+      const tt = t + 0.05 + i * U.rand(0.04, 0.09);
+      const ns = ctx.createBufferSource(); ns.buffer = this._noise(0.06);
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass'; f.frequency.value = U.rand(3200, 6000); f.Q.value = 6;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.28, tt);
+      g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.09);
+      ns.connect(f); f.connect(g);
+      this._out(g, 0.45, 0.35);
+      ns.start(tt);
+    }
+  },
+
+  /* 잠긴 것을 잡아당겼다 — 자물쇠와 쇠사슬이 덜컹거린다 */
+  rattle() {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t0 = ctx.currentTime;
+    for (let i = 0; i < 5; i++) {
+      const t = t0 + i * U.rand(0.055, 0.11);
+      const ns = ctx.createBufferSource(); ns.buffer = this._noise(0.1);
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass'; f.frequency.value = U.rand(1400, 3400); f.Q.value = 4;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(U.rand(0.07, 0.13), t + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + U.rand(0.08, 0.16));
+      ns.connect(f); f.connect(g);
+      this._out(g, 0.7, 0.5);
+      ns.start(t);
+    }
+    this.thump(0.12, 0.45);
+  },
+
+  /* 철문이 열린다 — 빗장, 그리고 바닥을 긁으며 밀려나는 쇠 */
+  gateOpen() {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    this.rattle();
+
+    const dur = 1.6;
+    const ns = ctx.createBufferSource(); ns.buffer = this._noise(dur + 0.2);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.Q.value = 3.2;
+    bp.frequency.setValueAtTime(2600, t + 0.25);
+    bp.frequency.exponentialRampToValueAtTime(520, t + 0.25 + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t + 0.25);
+    g.gain.exponentialRampToValueAtTime(0.16, t + 0.45);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25 + dur);
+    ns.connect(bp); bp.connect(g);
+    this._out(g, 0.7, 0.9);
+    ns.start(t + 0.25);
+
+    // 경첩이 돌아가는 저역
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(58, t + 0.3);
+    o.frequency.linearRampToValueAtTime(41, t + 1.6);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 240;
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, t + 0.3);
+    og.gain.exponentialRampToValueAtTime(0.10, t + 0.5);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 1.7);
+    o.connect(lp); lp.connect(og);
+    this._out(og, 0.6, 0.7);
+    o.start(t + 0.3); o.stop(t + 1.8);
+
+    this.thump(1.75, 0.8);
   },
 
   /* ---------------- 수색 / 공포 반응 ---------------- */
@@ -523,6 +635,92 @@ const Snd = {
     this._chaseNodes = [];
     setTimeout(() => { for (const n of nodes) { try { n.stop(); } catch (e) { /* 이미 멈춤 */ } } }, 1500);
     // 종을 다시 돌린다 — 조용해졌다는 것을 알려주는 것도 연출이다
+    if (this.started) this._scheduleBell(U.rand(3, 6));
+  },
+
+  /* ---------------- 숨은 자리를 들켰을 때 ----------------
+     추격 음악을 걷어내고 그 자리에 이것을 깐다.
+     조율되지 않은 저역 덩어리 + 위로 미끄러지는 가는 고음 + 불규칙한 숨.
+     빨라지지 않는다. 다만 조금씩 더 크고 더 높아진다 — 도망칠 수 없다는 뜻이다.
+  ------------------------------------------------------------- */
+  startDirge() {
+    if (!this.ctx || this.dirgeOn) return;
+    this.dirgeOn = true;
+    this.dirgeNear = 0;
+    this.stopBells();
+    const ctx = this.ctx, t = ctx.currentTime;
+
+    this.dirgeGain = ctx.createGain();
+    this.dirgeGain.gain.setValueAtTime(0.0001, t);
+    this.dirgeGain.gain.linearRampToValueAtTime(1, t + 1.6);
+    this.dirgeGain.connect(this.master);
+
+    // 반음 아래로 어긋난 저역 덩어리. 맥놀이가 계속 일렁인다.
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 190; lp.Q.value = 3;
+    const cg = ctx.createGain(); cg.gain.value = 0.085;
+    lp.connect(cg); cg.connect(this.dirgeGain);
+
+    const nodes = [];
+    [38.9, 41.2, 55.0, 58.27].forEach((f, i) => {
+      const o = ctx.createOscillator();
+      o.type = i & 1 ? 'sawtooth' : 'triangle';
+      o.frequency.value = f;
+      const g = ctx.createGain(); g.gain.value = i < 2 ? 1 : 0.55;
+      o.connect(g); g.connect(lp);
+      o.start(t); nodes.push(o);
+    });
+
+    // 아주 느린 떨림 — 숨을 쉬는 것처럼
+    const trem = ctx.createOscillator(); trem.frequency.value = 0.9;
+    const tg = ctx.createGain(); tg.gain.value = 0.045;
+    trem.connect(tg); tg.connect(cg.gain); trem.start(t); nodes.push(trem);
+
+    // 귀 안쪽을 긁는 가는 고음. 가까워질수록 올라간다.
+    const wh = ctx.createOscillator(); wh.type = 'sawtooth';
+    wh.frequency.value = 620;
+    const wf = ctx.createBiquadFilter();
+    wf.type = 'bandpass'; wf.frequency.value = 1800; wf.Q.value = 9;
+    const wg = ctx.createGain(); wg.gain.value = 0.004;
+    wh.connect(wf); wf.connect(wg); wg.connect(this.dirgeGain);
+    wh.start(t); nodes.push(wh);
+
+    this._dirgeNodes = nodes;
+    this._dirgeLp = lp; this._dirgeBody = cg;
+    this._dirgeWhine = wh; this._dirgeWhineG = wg; this._dirgeTrem = trem;
+    this._dirgeBreath();
+  },
+
+  /* 불규칙한 숨소리 — 간격이 일정하지 않아야 사람이 아닌 것으로 들린다 */
+  _dirgeBreath() {
+    if (!this.dirgeOn) return;
+    this.breath();
+    this.dirgeBreathTimer = setTimeout(() => this._dirgeBreath(),
+      U.rand(1.6, 3.4) * 1000 * (1 - this.dirgeNear * 0.45));
+  },
+
+  setDirge(near) {
+    this.dirgeNear = U.clamp(near, 0, 1);
+    if (!this.dirgeOn) return;
+    const t = this.ctx.currentTime, n = this.dirgeNear;
+    this._dirgeBody.gain.setTargetAtTime(0.085 + n * 0.14, t, 0.5);
+    this._dirgeLp.frequency.setTargetAtTime(190 + n * 210, t, 0.5);
+    this._dirgeWhine.frequency.setTargetAtTime(620 + n * 900, t, 0.8);
+    this._dirgeWhineG.gain.setTargetAtTime(0.004 + n * 0.020, t, 0.6);
+    this._dirgeTrem.frequency.setTargetAtTime(0.9 + n * 2.6, t, 0.6);
+  },
+
+  stopDirge() {
+    if (!this.dirgeOn) return;
+    this.dirgeOn = false;
+    clearTimeout(this.dirgeBreathTimer);
+    const t = this.ctx.currentTime;
+    this.dirgeGain.gain.cancelScheduledValues(t);
+    this.dirgeGain.gain.setValueAtTime(this.dirgeGain.gain.value, t);
+    this.dirgeGain.gain.linearRampToValueAtTime(0.0001, t + 1.1);
+    const nodes = this._dirgeNodes || [];
+    this._dirgeNodes = [];
+    setTimeout(() => { for (const n of nodes) { try { n.stop(); } catch (e) { /* 이미 멈춤 */ } } }, 1300);
     if (this.started) this._scheduleBell(U.rand(3, 6));
   },
 

@@ -7,9 +7,13 @@
      · cellar 지하  — 석조 챔버들과 통로, 보일러실
 ------------------------------------------------------------------------- */
 
-const TT = { VOID: 0, WALL: 1, FLOOR: 2, GRASS: 3, WATER: 4, CURB: 5, FENCE: 6, DOOR: 7, WINDOW: 8 };
-const TT_NAME = ['void', 'wall', 'floor', 'grass', 'water', 'curb', 'fence', 'door', 'window'];
-const TT_WALK = [0, 0, 1, 1, 0, 0, 0, 0, 0];
+const TT = {
+  VOID: 0, WALL: 1, FLOOR: 2, GRASS: 3, WATER: 4, CURB: 5, FENCE: 6, DOOR: 7, WINDOW: 8,
+  GATE: 9, GATE_OPEN: 10
+};
+const TT_NAME = ['void', 'wall', 'floor', 'grass', 'water', 'curb', 'fence', 'door', 'window',
+                 'gate', 'gateOpen'];
+const TT_WALK = [0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1];
 
 const LEVEL_DEF = {
 
@@ -52,7 +56,8 @@ const LEVEL_DEF = {
     start: [3, 8]
   },
 
-  /* ===================== 골목 (1) ===================== */
+  /* ===================== 골목 (1) =====================
+     시작은 오른쪽 아래, 문은 왼쪽 위 뒷골목. 대각선으로 가로지르게 만든다. */
   alley: {
     theme: 'alley', W: 46, H: 32, fill: TT.WALL, windows: true,
     mins: { trace: 2, dread: 2 },        // 절제. 대부분 비어 있다는 것을 먼저 학습시킨다
@@ -76,31 +81,39 @@ const LEVEL_DEF = {
       ['r', 27, 11, 2, 17, TT.FLOOR],
       ['r', 35, 4, 2, 24, TT.FLOOR],
       // 막다른 뒷길
-      ['r', 23, 21, 2, 6, TT.FLOOR],
-      ['r', 14, 12, 4, 2, TT.FLOOR],
+      ['r', 23, 20, 2, 7, TT.FLOOR],       // 가로 골목(y18) 에서 아래로 파고드는 길
+      ['r', 12, 12, 6, 2, TT.FLOOR],       // 세로 골목(x10)에서 갈라지는 뒷길 — 문이 여기 있다
       ['r', 30, 22, 5, 2, TT.FLOOR],
       // 철망으로 막힌 곳
       ['r', 10, 22, 2, 1, TT.FENCE],
       ['r', 35, 14, 2, 1, TT.FENCE],
       ['r', 19, 9, 2, 1, TT.FENCE],
-      // 목표 : 골목을 향해 난 문
-      ['r', 31, 17, 1, 1, TT.DOOR]
+      // 목표 : 뒷골목 막다른 곳의 문
+      ['r', 14, 11, 1, 1, TT.DOOR]
     ],
     props: [
-      // 목표 문(31,17) 근처에는 등을 두지 않는다 — 빛으로 알려주면 안 된다
+      // 목표 문(14,11) 근처에는 등을 두지 않는다 — 빛으로 알려주면 안 된다
       ['lamp', 6, 3, 1], ['lamp', 39, 3, 1], ['lamp', 6, 26, 1], ['lamp', 39, 26, 1],
-      ['lamp', 13, 10, 1], ['lamp', 24, 29, 1],
+      ['lamp', 24, 10, 1], ['lamp', 24, 29, 1],
       ['bin', 5, 8, 1], ['bin', 25, 3, 1], ['bin', 41, 17, 1], ['bin', 16, 30, 1],
       ['drum', 8, 10, 1], ['drum', 29, 27, 1], ['drum', 43, 9, 1], ['drum', 2, 20, 1],
       ['crate', 15, 13, 1], ['crate', 24, 26, 1], ['crate', 37, 19, 1], ['crate', 12, 19, 1],
       ['pallet', 17, 12], ['pallet', 33, 23], ['pallet', 22, 2],
       ['sign', 20, 30, 1], ['sign', 44, 24, 1], ['sign', 3, 12, 1]
     ],
-    start: [2, 29],
-    goal: { t: 'door', x: 31, y: 17 }
+    /* 그것이 서는 자리. 무작위로 튀어나오지 않고 반드시 이 좌표들 중 하나에서 나온다. */
+    lairs: [
+      [2, 2], [43, 3], [24, 2], [2, 18], [10, 15], [10, 26], [19, 6],
+      [27, 15], [27, 26], [35, 10], [35, 25], [20, 29], [32, 22], [43, 20], [23, 24]
+    ],
+    /* 처음부터 그 자리에 서 있는 것 */
+    sentries: [[23, 24]],
+    start: [43, 29],
+    goal: { t: 'door', x: 14, y: 11 }
   },
 
-  /* ===================== 낡은 건물 (2) ===================== */
+  /* ===================== 낡은 건물 (2) =====================
+     지하로 내려가는 문은 잠겨 있다. 방 하나를 끝까지 뒤져 열쇠를 찾아야 열린다. */
   house: {
     theme: 'house', W: 46, H: 30, fill: TT.WALL, windows: true,
     mins: { trace: 3, dread: 3 },
@@ -109,6 +122,8 @@ const LEVEL_DEF = {
       '안쪽은 바깥보다 더 조용했다.',
       '누가 살다 나간 자리에 가구만 그대로 남아 있다.'
     ],
+    lock: { need: 1, kind: 'key' },
+    keyProps: [[42, 18]],                  // H 창고 방 옷장 안
     ops: [
       // 복도
       ['r', 21, 2, 3, 26, TT.FLOOR],         // 세로 복도
@@ -141,8 +156,8 @@ const LEVEL_DEF = {
       ['r', 15, 16, 2, 1, TT.FLOOR],
       ['r', 29, 16, 2, 1, TT.FLOOR],
       ['r', 37, 16, 2, 1, TT.FLOOR],
-      // 목표 : 지하로 내려가는 문
-      ['r', 41, 16, 1, 1, TT.DOOR]
+      // 목표 : 지하로 내려가는 문 (F 방 안쪽 — 아래 가운데)
+      ['r', 13, 16, 1, 1, TT.DOOR]
     ],
     props: [
       // A 침실
@@ -159,17 +174,29 @@ const LEVEL_DEF = {
       ['table', 15, 21, 1], ['chair', 13, 23, 1], ['chair', 17, 25, 1], ['shelf', 18, 18, 1],
       // G
       ['cabinet', 28, 19, 1], ['bed', 31, 24, 1], ['plant', 33, 20, 1], ['chair', 27, 26, 1],
-      // H
+      // H — 열쇠는 이 방 옷장 안에 있다
       ['shelf', 38, 20, 1], ['crate', 41, 24, 1], ['table', 39, 27, 1],
+      ['cabinet', 42, 18, 1],
       // 복도
       ['plant', 22, 4, 1], ['plant', 22, 26, 1], ['chair', 22, 11, 1],
-      ['cabinet', 33, 14, 1], ['crate', 10, 14, 1]
+      ['cabinet', 33, 14, 1], ['crate', 10, 14, 1],
+      // 숨을 자리 — 방마다 하나씩. 쫓기기 전에 미리 봐 두어야 쓸모가 있다.
+      ['locker', 2, 2, 1], ['locker', 26, 10, 1], ['locker', 36, 2, 1],
+      ['locker', 2, 17, 1], ['locker', 12, 27, 1], ['locker', 43, 26, 1]
     ],
+    lairs: [
+      [17, 4], [30, 4], [41, 4], [5, 25], [17, 26], [30, 25], [41, 25],
+      [22, 9], [22, 24], [8, 14], [32, 14], [6, 10], [41, 10], [6, 19], [41, 19]
+    ],
+    sentries: [[30, 7], [6, 24]],
     start: [4, 4],
-    goal: { t: 'door', x: 41, y: 16 }
+    goal: { t: 'door', x: 13, y: 16 }
   },
 
-  /* ===================== 지하 (3) ===================== */
+  /* ===================== 지하 (3) =====================
+     계단은 오른쪽 위, 고양이는 왼쪽 아래 챔버에 있다.
+     그 챔버로 가는 길은 철문 하나뿐이고, 철문의 자물쇠는 세 군데가 잠겨 있다.
+     조각 셋을 다 모으기 전에는 어떤 길로도 넘어갈 수 없다. */
   cellar: {
     theme: 'cellar', W: 50, H: 30, fill: TT.WALL, windows: false,
     mins: { trace: 3, dread: 4 },        // 마지막 구간이 가장 조인다
@@ -178,44 +205,57 @@ const LEVEL_DEF = {
       '계단은 아래로만 이어졌다.',
       '천장의 전구가 일정한 간격으로 하나씩 켜져 있다.'
     ],
+    lock: { need: 3, kind: 'shard' },
+    keyProps: [[12, 4], [23, 25], [37, 18]],   // 챔버1 / 보일러실 / 마지막 방
     ops: [
       ['r', 2, 2, 12, 9, TT.FLOOR],          // 챔버 1
       ['r', 18, 3, 14, 7, TT.FLOOR],         // 챔버 2
-      ['r', 36, 2, 12, 10, TT.FLOOR],        // 챔버 3
-      ['r', 3, 15, 13, 12, TT.FLOOR],        // 챔버 4
+      ['r', 36, 2, 12, 10, TT.FLOOR],        // 챔버 3 — 계단이 있는 곳
+      ['r', 3, 15, 13, 12, TT.FLOOR],        // 챔버 4 — 철문 너머. 고양이가 여기 있다
       ['r', 20, 14, 12, 13, TT.FLOOR],       // 보일러실
       ['r', 36, 16, 12, 11, TT.FLOOR],       // 마지막 방
       // 통로
       ['r', 14, 6, 4, 2, TT.FLOOR],
       ['r', 32, 5, 4, 2, TT.FLOOR],
-      ['r', 7, 11, 3, 4, TT.FLOOR],
       ['r', 24, 10, 3, 4, TT.FLOOR],
       ['r', 40, 12, 3, 4, TT.FLOOR],
       ['r', 16, 19, 4, 2, TT.FLOOR],
       ['r', 32, 20, 4, 2, TT.FLOOR],
+      // 챔버 4 로 가는 유일한 길목을 철문으로 막는다
+      ['r', 17, 19, 1, 2, TT.GATE],
       // 물 고인 수로
       ['r', 4, 24, 10, 2, TT.WATER],
       ['r', 44, 24, 4, 2, TT.WATER]
     ],
     props: [
-      ['stairs', 4, 4, 1],
-      // 고양이가 앉은 (45,21) 주변은 비워 둔다 — 마지막 방 구석은 어둠으로 남는다
+      ['stairs', 45, 3, 1],
+      // 챔버 4 에는 전구를 하나도 두지 않는다 — 고양이는 손전등으로 직접 찾아야 한다
       ['bulb', 8, 5], ['bulb', 24, 6], ['bulb', 41, 5],
-      ['bulb', 8, 20], ['bulb', 24, 17], ['bulb', 29, 23],
-      ['bulb', 16, 6], ['bulb', 12, 24], ['bulb', 38, 18],
+      ['bulb', 21, 22], ['bulb', 24, 17], ['bulb', 29, 23],
+      ['bulb', 16, 6], ['bulb', 44, 20], ['bulb', 38, 18],
       ['boiler', 26, 20, 1], ['barrel', 22, 17, 1], ['barrel', 23, 25, 1],
       ['barrel', 5, 9, 1], ['barrel', 46, 8, 1],
       ['crate', 12, 4, 1], ['crate', 19, 8, 1], ['crate', 38, 10, 1],
       ['crate', 6, 17, 1], ['crate', 14, 22, 1], ['crate', 30, 25, 1],
       ['shelf', 44, 4, 1], ['shelf', 12, 16, 1], ['shelf', 37, 18, 1],
+      // 숨을 자리
+      ['locker', 2, 10, 1], ['locker', 18, 9, 1], ['locker', 36, 11, 1],
+      ['locker', 20, 26, 1], ['locker', 47, 17, 1],
       ['pipeV', 2, 6], ['pipeV', 2, 7], ['pipeV', 2, 8],
       ['pipeV', 49, 18], ['pipeV', 49, 19], ['pipeV', 49, 20],
       ['pipeH', 19, 3], ['pipeH', 20, 3], ['pipeH', 21, 3], ['pipeH', 22, 3],
       ['pipeH', 37, 16], ['pipeH', 38, 16], ['pipeH', 39, 16],
-      ['puddle', 10, 8], ['puddle', 29, 12], ['puddle', 39, 22], ['puddle', 17, 25]
+      ['puddle', 10, 8], ['puddle', 29, 12], ['puddle', 39, 22], ['puddle', 10, 20]
     ],
-    start: [4, 8],
-    goal: { t: 'cat', x: 45, y: 21 }
+    lairs: [
+      [3, 3], [11, 9], [21, 5], [29, 8], [38, 3], [46, 11],
+      [16, 6], [33, 5], [25, 12], [41, 14], [33, 20],
+      [22, 15], [29, 22], [20, 24], [39, 25], [46, 18]
+    ],
+    /* 마지막 챔버 안쪽에도 하나 세워 둔다 — 철문을 열고 들어선 직후 */
+    sentries: [[29, 16], [44, 22], [12, 18]],
+    start: [45, 6],
+    goal: { t: 'cat', x: 7, y: 22 }
   }
 };
 
@@ -227,7 +267,9 @@ const LEVEL_DEF = {
  * ------------------------------------------------------------------ */
 const SEARCHABLE = new Set(['cabinet', 'crate', 'drum', 'bin', 'barrel', 'shelf', 'bed']);
 /* 뚜껑·문이 열리는 것들. 수색 후 속이 비어 보이게 그린다 */
-const CONTAINER = new Set(['cabinet', 'crate', 'drum', 'bin', 'barrel']);
+const OPENABLE = new Set(['cabinet', 'crate', 'drum', 'bin', 'barrel']);
+/* 사람이 들어갈 수 있는 것들. 사물함(locker)은 뒤질 것이 없고 오직 숨기 위한 자리다. */
+const CONTAINER = new Set(['cabinet', 'crate', 'drum', 'bin', 'barrel', 'locker']);
 
 /* 대부분은 비어 있어야 한다. 열 때마다 뭔가 나오면 긴장이 아니라 기대가 된다. */
 const OUTCOME_W = [
@@ -261,7 +303,7 @@ const FLAVOR = {
 
 const Levels = {
   T: 16,
-  SEARCHABLE, CONTAINER, FLAVOR,
+  SEARCHABLE, CONTAINER, OPENABLE, FLAVOR,
 
   build(name) {
     const D = LEVEL_DEF[name];
@@ -312,11 +354,42 @@ const Levels = {
     /* 레벨마다 최소치를 보장한다.
        난수에 맡기면 한 스테이지에 공포 반응이 하나도 없는 판이 나온다 — 실제로 나왔다.
        개수는 연출상 정하는 값이라 레벨 청사진에 직접 적는다. */
+    /* 열쇠(조각)는 난수에 맡기지 않는다. 반드시 이 소품 안에서 나온다 —
+       못 찾으면 진행이 막히는 물건이라 확률로 두면 안 된다. */
+    for (const [kx, ky] of (D.keyProps || [])) {
+      const pr = map.props.find(p => p.tx === kx && p.ty === ky && p.searchable);
+      if (pr) pr.outcome = 'key';
+      else console.warn('[level] 열쇠를 넣을 수색 대상이 없다:', name, kx, ky);
+    }
+
     const searchables = map.props.filter(p => p.searchable);
     const mins = D.mins || { trace: 2, dread: 2 };
     this.ensureMin(searchables, 'trace', mins.trace);
     this.ensureMin(searchables, 'dread', mins.dread);
     map.searchTotal = searchables.length;
+
+    /* 그것이 나오는 자리 / 처음부터 서 있는 자리 */
+    const pt = ([x, y]) => ({ tx: x, ty: y, x: x * this.T + this.T / 2, y: y * this.T + this.T - 2 });
+    map.lairs = (D.lairs || []).map(pt);
+    map.sentries = (D.sentries || []).map(pt);
+    for (const s of map.lairs.concat(map.sentries))
+      if (this.solid(map, s.tx, s.ty)) console.warn('[level] 설 수 없는 자리:', name, s.tx, s.ty);
+
+    /* 철문 : 격자에 찍힌 GATE 칸을 모아 하나의 문으로 다룬다 */
+    const gt = [];
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++)
+        if (grid[y][x] === TT.GATE) gt.push([x, y]);
+    if (gt.length) {
+      let sx = 0, sy = 0;
+      for (const [x, y] of gt) { sx += x; sy += y; }
+      map.gate = {
+        tiles: gt, open: false,
+        x: (sx / gt.length) * this.T + this.T / 2,
+        y: (sy / gt.length) * this.T + this.T / 2
+      };
+    }
+    if (D.lock) map.lock = { need: D.lock.need, kind: D.lock.kind, have: 0 };
 
     map.start = { x: D.start[0] * this.T + this.T / 2, y: D.start[1] * this.T + this.T / 2 };
     if (D.goal) {
@@ -363,6 +436,14 @@ const Levels = {
     return pool ? pool[idx % pool.length] : '';
   },
 
+  /* 철문을 연다. 격자가 바뀌므로 이후의 길찾기·충돌이 전부 따라온다. */
+  openGate(map) {
+    if (!map.gate || map.gate.open) return false;
+    for (const [x, y] of map.gate.tiles) map.grid[y][x] = TT.GATE_OPEN;
+    map.gate.open = true;
+    return true;
+  },
+
   solid(map, tx, ty) {
     if (tx < 0 || ty < 0 || tx >= map.W || ty >= map.H) return true;
     if (!TT_WALK[map.grid[ty][tx]]) return true;
@@ -384,9 +465,12 @@ const Levels = {
     return m;
   },
 
-  /* 시작점에서 목표까지 실제로 갈 수 있는지 (개발용 검사) */
+  /* 시작점에서 목표까지 실제로 갈 수 있는지 (개발용 검사).
+     잠긴 철문은 열 수 있는 것이므로 뚫린 것으로 친다. */
   reachable(map, from, to) {
     const { W, H } = map;
+    const shut = (x, y) =>
+      map.grid[y][x] === TT.GATE ? map.blocked[x + y * W] === 1 : this.solid(map, x, y);
     const seen = new Uint8Array(W * H);
     const q = [from.x + from.y * W];
     seen[q[0]] = 1;
@@ -396,7 +480,7 @@ const Levels = {
       for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
         if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
         const ni = nx + ny * W;
-        if (seen[ni] || this.solid(map, nx, ny)) continue;
+        if (seen[ni] || shut(nx, ny)) continue;
         seen[ni] = 1; q.push(ni);
       }
     }

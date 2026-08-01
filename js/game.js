@@ -21,7 +21,7 @@ const Game = {
   _f0: 0, _f1: 0, _fd: 0, _ft: 0,
 
   tl: [], tlT: 0,
-  meowT: 0, creakT: 0, stepT: 0,
+  meowT: 0, creakT: 0, stepDist: 0,
 
   /* --- 수색 / 불안 --- */
   dread: 0,          // 0~10. UI 로 보여주지 않는다. 소리와 '그것' 의 출현 빈도로만 드러난다.
@@ -30,18 +30,26 @@ const Game = {
   searchTarget: null,
   torchOutT: 0,
   figure: null,
+  sentries: [],              // 처음부터 정해진 좌표에 서 있는 것들
   figSpawnT: 0,
-  hiding: null,              // { pr } — 상자·옷장 안에 들어가 있는 상태
+  hiding: null,              // { pr, spot } — 상자·옷장 안에 들어가 있는 상태
+  flick: 0,                  // 들킨 채 숨어 있을 때의 화면 명멸
   _lastTile: { x: -1, y: -1 },
   moveDir: { x: 1, y: 0 },
 
   SPEED: 62,
+  STRIDE: 27,                // 이만큼 걸을 때마다 발소리 한 번.
+                             // 시간이 아니라 이동 거리로 세야 걷는 속도와 어긋나지 않는다.
   TORCH: 96,
   FIG_SPEED: 0.7,            // 주인공 속도의 배율. 느리지만 쉬지 않는다.
+  CREEP_SPEED: 0.30,         // 숨은 자리를 찾아낸 뒤 다가올 때. 느릴수록 길게 조인다.
   CATCH_D: 13,               // 잡히는 거리
-  SEEN_D: 95,                // 이 안에서 숨으면 들킨다
+  SEEN_D: 150,               // 이 안에서 숨으면 들어가는 것을 본다
+  HIDE_FIND_D: 52,           // 못 봤어도 이만큼 가까이 지나가면 숨은 자리를 찾아낸다
+  WAKE_D: 132,               // 서 있던 것이 이쪽을 알아채는 거리
   GIVEUP_D: 210,             // 이만큼 떨어진 채로 2.5초 버티면 포기한다.
                              // 속도차가 초당 18px 뿐이라 이보다 크면 맵 길이 안에서 따돌릴 수 없다.
+  PROWL_T: 9.5,              // 못 본 경우 주변을 서성이는 시간
 
   el: {},
 
@@ -201,12 +209,12 @@ const Game = {
 
     const P = this.player, C = this.cat;
     if (P.speed > 0) {
-      P.x += P.speed * dt;
+      const d = P.speed * dt;
+      P.x += d;
       P.walk += dt * 6.5;
       P.moving = true;
-      this.stepT -= dt;
-      if (this.stepT <= 0) { Snd.step(); this.stepT = 0.52; }
-    } else P.moving = false;
+      this.footstep(d);
+    } else { P.moving = false; this.stepDist = this.STRIDE * 0.7; }
     if (C.speed > 0) { C.x += C.speed * dt; C.anim += dt * 14; }
 
     this.followCam(P.x + 4, P.y + 4, dt, 5);
@@ -239,12 +247,14 @@ const Game = {
 
     this.meowT = U.rand(3, 6);
     this.creakT = U.rand(18, 32);
-    this.stepT = 0;
+    this.stepDist = this.STRIDE * 0.7;
 
     // 불안도와 흔적은 스테이지를 넘어 누적된다 — 아래로 갈수록 조여지도록
     this.searchT = 0; this.searchTarget = null;
     this.torchOutT = 0; this.hiding = null;
     this.dropFigure(false);
+    // 정해진 좌표에 서 있는 것들. 다가가면 깨어난다.
+    this.sentries = (m.sentries || []).map(s => ({ x: s.x, y: s.y }));
     this._lastTile.x = -1; this._lastTile.y = -1;
     this.figSpawnT = i === 0 ? U.rand(8, 14) : U.rand(20, 32);
     Narrator.clearFlash();
@@ -254,13 +264,22 @@ const Game = {
     this.showStageTitle(m.title, 3.6);
     Snd.setAmbience(1, 3);
 
+    // 잠긴 곳이 있는 판은 무엇을 찾아야 하는지 한 줄로 알려 준다.
+    // 열쇠가 있다는 사실 자체를 숨기면 탐색이 아니라 헤매기가 된다.
+    const lines = m.lines.slice();
+    if (m.lock) {
+      lines.push(m.lock.kind === 'key'
+        ? '아래로 내려가는 문은 잠겨 있었다. 열쇠는 이 안 어딘가에 있을 것이다.'
+        : '길을 막은 철문에는 자물쇠가 세 개. 조각을 셋 다 찾아야 한다.');
+    }
+
     setTimeout(() => {
       if (this.state !== 'play') return;
-      Narrator.say(m.lines, () => {
+      Narrator.say(lines, () => {
         this.locked = false;
         this.setHint(TouchPad.enabled
-          ? '왼쪽을 끌어 이동   ·   E — 열고 뒤지기'
-          : 'W A S D — 이동   ·   E — 열고 뒤지기');
+          ? '왼쪽을 끌어 이동   ·   E — 뒤지기 / 숨기'
+          : 'W A S D — 이동   ·   E — 뒤지기 / 숨기');
         setTimeout(() => this.setHint(''), 4500);
       });
     }, 1700);
@@ -275,23 +294,27 @@ const Game = {
     }
     if (this.torchOutT > 0) this.torchOutT -= dt;
     this.updFigure(dt);
+    if (this.state !== 'play') return;
+    this.updSentries();
 
     if (this.locked || this.searchT > 0 || this.hiding) {
       if (this.locked && Input.pressed(' ', 'enter', 'e')) Narrator.advance();
       P.moving = false;
+      this.stepDist = this.STRIDE * 0.7;
     } else {
       const mv = Input.move();
       if (mv.m > 0) {
         const sp = this.SPEED * mv.m;
+        const bx = P.x, by = P.y;
         this.moveAxis(P, mv.x * sp * dt, 0);
         this.moveAxis(P, 0, mv.y * sp * dt);
         if (Math.abs(mv.x) > 0.25) P.face = mv.x > 0 ? 1 : -1;
         this.moveDir.x = mv.x; this.moveDir.y = mv.y;
         P.walk += dt * 7 * mv.m;
         P.moving = true;
-        this.stepT -= dt * mv.m;
-        if (this.stepT <= 0) { Snd.step(); this.stepT = 0.48; }
-      } else P.moving = false;
+        // 벽에 밀려 실제로 움직이지 못하면 발소리도 나지 않는다
+        this.footstep(Math.hypot(P.x - bx, P.y - by));
+      } else { P.moving = false; this.stepDist = this.STRIDE * 0.7; }
     }
     if (this.state !== 'play') return;
 
@@ -306,42 +329,68 @@ const Game = {
     let hint = '';
 
     if (this.hiding) {
-      hint = 'E — 나온다';
-      if (Input.pressed('e')) { this.exitHide(); return; }
+      // 들킨 뒤에는 나올 수 없다. 문이 열릴 때까지 안에서 듣고 있어야 한다.
+      if (!(this.figure && this.figure.hunt)) {
+        hint = 'E — 나온다';
+        if (Input.pressed('e')) { this.exitHide(); return; }
+      }
     } else if (!this.locked && this.searchT <= 0) {
-      if (!G.used && d < 30) {
-        hint = G.type === 'door' ? 'E — 문을 연다' : 'E — 고양이를 부른다';
-        if (Input.pressed('e')) {
-          G.used = true;
-          this.setHint('');
-          if (G.type === 'door') this.enterDoor(); else this.startEnding();
-          return;
+      const gate = this.map.gate;
+      const gd = (gate && !gate.open) ? U.dist(pcx, pcy, gate.x, gate.y) : Infinity;
+      const L = this.map.lock;
+      const short = L ? L.need - L.have : 0;
+
+      if (gd < 36) {
+        if (short > 0) {
+          hint = `철문 — 자물쇠 ${L.have} / ${L.need}`;
+          if (Input.pressed('e')) {
+            Snd.rattle();
+            Narrator.flash(`자물쇠가 꿈쩍도 하지 않는다. 조각이 ${short}개 더 필요하다.`, { bad: true, dur: 3.4 });
+          }
+        } else {
+          hint = 'E — 철문을 연다';
+          if (Input.pressed('e')) { this.openGate(); return; }
         }
-      } else if (chased) {
-        // 쫓기는 중에는 뒤지는 대신 들어가 숨는다
-        const pr = this.nearestContainer(pcx, pcy);
-        if (pr) {
-          hint = 'E — 숨는다';
-          if (Input.pressed('e')) { this.tryHide(pr); return; }
+      } else if (!G.used && d < 30) {
+        if (short > 0 && !gate) {
+          hint = '잠겨 있다 — 열쇠가 없다';
+          if (Input.pressed('e')) {
+            Snd.rattle();
+            Narrator.flash('손잡이가 돌아가지 않는다. 열쇠는 이 집 어딘가에 있다.', { bad: true, dur: 3.4 });
+          }
+        } else {
+          hint = G.type === 'door' ? 'E — 문을 연다' : 'E — 고양이를 부른다';
+          if (Input.pressed('e')) {
+            G.used = true;
+            this.setHint('');
+            if (G.type === 'door') this.enterDoor(); else this.startEnding();
+            return;
+          }
         }
       } else {
-        const pr = this.nearestSearchable(pcx, pcy);
+        // 쫓기는 중에는 뒤지는 것보다 숨는 것이 먼저다
+        const box = this.nearestHide(pcx, pcy);
+        const pr = chased ? null : this.nearestSearchable(pcx, pcy);
         if (pr) {
           hint = 'E — ' + this.searchVerb(pr.n);
           if (Input.pressed('e')) { this.beginSearch(pr); hint = ''; }
+        } else if (box) {
+          hint = chased ? 'E — 숨는다' : 'E — 안에 숨는다';
+          if (Input.pressed('e')) { this.tryHide(box); return; }
         }
       }
     }
     if (hint) this.setHint(hint, true);
     else if (this._actionHint) this.setHint('');
 
-    /* --- 출현 --- */
+    /* --- 출현 : 자리는 언제나 레벨에 박아 둔 lairs 중 하나다 --- */
     this.figSpawnT -= dt;
     if (this.figSpawnT <= 0) {
       if (this.stageIdx === 0) {
         // 나타나기는 하되 드물게. 흔해지면 무서운 것이 아니라 익숙한 것이 된다.
         this.figSpawnT = U.rand(28, 42);
-        if (!this.figure && !this.locked && U.chance(0.35)) this.spawnFigure('watch', true);
+        if (!this.figure && !this.locked && !this.hiding && U.chance(0.35))
+          this.spawnFigure('watch', true);
       } else {
         this.figSpawnT = U.rand(32, 50);
         if (!this.figure && !this.locked && !this.hiding && this.dread >= 2 &&
@@ -362,6 +411,26 @@ const Game = {
       this.creakT = U.rand(22, 44);
       if (U.chance(0.6)) Snd.creak(0.30); else Snd.thump(0, 0.4);
     }
+  },
+
+  /* 이동한 거리만큼 발소리를 쌓는다. 걸음 폭이 곧 소리 간격이 된다. */
+  footstep(moved) {
+    if (moved <= 0.02) return;
+    this.stepDist += moved;
+    if (this.stepDist < this.STRIDE) return;
+    this.stepDist -= this.STRIDE;
+    Snd.step(this.map ? this.map.theme : 'alley');
+  },
+
+  /* ---------------- 철문 ---------------- */
+  openGate() {
+    if (!Levels.openGate(this.map)) return;
+    this.setHint('');
+    Snd.gateOpen();
+    Narrator.flash('빗장이 풀리고, 철문이 안쪽으로 밀려났다.', { dur: 4.0 });
+    this.dreadBy(1);
+    // 쇠가 긁히는 소리는 멀리 간다. 뭔가가 이쪽으로 온다.
+    this.figSpawnT = Math.min(this.figSpawnT, U.rand(5, 10));
   },
 
   /* ---------------- 수색 ---------------- */
@@ -421,6 +490,10 @@ const Game = {
         if (U.chance(0.5)) Snd.scurry(); else Snd.thump(0.15, 0.5);
         break;
 
+      case 'key':
+        this.takeKey();
+        break;
+
       case 'dread':
         this.dreadBy(2);
         this.dreadEvent(pr);
@@ -431,9 +504,26 @@ const Game = {
     }
 
     // 무엇이 나왔든, 뚜껑을 닫고 고개를 들면 서 있을 때가 있다.
-    // 손전등 반경 안쪽에 세워야 "보게" 되므로 거리를 좁게 잡는다.
-    // 여기서는 어느 라운드든 쫓아오지 않는다 — 쳐다보기만 한다.
-    if (U.chance(0.30)) this.spawnFigure('watch', false, { min: 62, max: 100 });
+    // 1라운드에서는 쳐다보기만 하지만, 그 뒤로는 그대로 걸어온다.
+    if (this.stageIdx === 0) {
+      if (U.chance(0.30)) this.spawnFigure('watch', false, { min: 62, max: 150 });
+    } else if (U.chance(0.24)) {
+      this.spawnFigure('chase', false, { min: 70, max: 200 });
+    }
+  },
+
+  /* 열쇠 / 열쇠 조각을 손에 넣는다 */
+  takeKey() {
+    const L = this.map.lock;
+    if (L) L.have = Math.min(L.need, L.have + 1);
+    this.dreadBy(-0.5);
+    Snd.pickup();
+    if (!L || L.kind === 'key')
+      Narrator.flash('작은 열쇠 하나. 아래로 내려가는 문의 것이다.', { dur: 4.4 });
+    else if (L.have >= L.need)
+      Narrator.flash(`마지막 조각. (${L.have} / ${L.need})  이제 철문을 열 수 있다.`, { dur: 4.8 });
+    else
+      Narrator.flash(`녹슨 열쇠 조각 하나. (${L.have} / ${L.need})`, { dur: 4.4 });
   },
 
   dreadBy(v) {
@@ -441,7 +531,8 @@ const Game = {
     Snd.setDread(this.dread);
   },
 
-  /* 잘못 연 쪽. 어떤 것도 쫓아오거나 해치지 않는다 — 한 번 보여주고 사라질 뿐이다. */
+  /* 잘못 연 쪽.
+     1라운드에서는 한 번 보여주고 사라지지만, 그 뒤로는 상자에서 걸어 나온다. */
   dreadEvent(pr) {
     const T = this.map.T;
     const kinds = ['figure', 'torch', 'bell', 'deep', 'behind'];
@@ -449,7 +540,11 @@ const Game = {
       case 'figure':
         Narrator.flash('…안에 누군가 서 있었다.', { bad: true, dur: 4.4 });
         Snd.sting();
-        this.figure = { x: pr.tx * T + T / 2, y: pr.ty * T + T - 2, t: 0.6, mode: 'inside' };
+        this.figure = {
+          x: pr.tx * T + T / 2, y: pr.ty * T + T - 2,
+          t: this.stageIdx === 0 ? 0.6 : 1.1, mode: 'inside',
+          becomes: this.stageIdx === 0 ? null : 'chase'
+        };
         break;
       case 'torch':
         Narrator.flash('여는 순간 손전등이 꺼졌다.', { bad: true, dur: 4.4 });
@@ -481,25 +576,57 @@ const Game = {
   /* 그것을 치울 때는 반드시 여기를 지난다 — 추격 사운드가 남아 있으면 안 된다 */
   dropFigure(whoosh) {
     if (this.figure && this.figure.mode === 'chase') Snd.stopChase();
+    Snd.stopDirge();
     this.figure = null;
     this.chaseProx = 0;
+    this.flick = 0;
     if (whoosh) Snd.whoosh();
   },
 
-  /* 갈 수 있는 칸 중에서 세울 자리를 고른다 */
-  pickFigureSpot(minD, maxD, angle, spread) {
-    const P = this.player, T = this.map.T;
-    for (let i = 0; i < 70; i++) {
-      const a = angle === null ? Math.random() * Math.PI * 2 : angle + U.rand(-spread, spread);
-      const dist = U.rand(minD, maxD);
-      const wx = P.x + 4 + Math.cos(a) * dist;
-      const wy = P.y + 4 + Math.sin(a) * dist;
-      const tx = (wx / T) | 0, ty = (wy / T) | 0;
-      if (!Levels.walkTile(this.map, tx, ty)) continue;
-      if (this.map.blocked[tx + ty * this.map.W]) continue;
-      return { x: tx * T + T / 2, y: ty * T + T - 2 };
+  /* 세울 자리는 레벨에 박아 둔 lairs 중에서만 고른다.
+     아무 데서나 튀어나오면 어디가 위험한지 배울 수가 없다 —
+     같은 자리에서 반복해 나와야 그 골목을 피해 다니게 된다.
+     주인공에게서 실제로 걸어올 수 있는 자리인지도 함께 본다(철문 너머 등). */
+  pickLair(minD, maxD, angle, spread) {
+    const m = this.map;
+    if (!m.lairs || !m.lairs.length) return null;
+    const P = this.player, px = P.x + 4, py = P.y + 4;
+    const flow = this.buildFlow({ x: px, y: py });
+    const inRange = [], any = [];
+
+    for (const l of m.lairs) {
+      if (flow && flow[l.tx + l.ty * m.W] < 0) continue;   // 길이 끊긴 자리
+      const d = U.dist(px, py, l.x, l.y);
+      if (d < minD) continue;
+      any.push({ l, d });
+      if (d > maxD) continue;
+      if (angle !== null && angle !== undefined) {
+        let da = Math.atan2(l.y - py, l.x - px) - angle;
+        while (da > Math.PI) da -= Math.PI * 2;
+        while (da < -Math.PI) da += Math.PI * 2;
+        if (Math.abs(da) > spread) continue;
+      }
+      inRange.push(l);
     }
-    return null;
+    if (inRange.length) return U.choice(inRange);
+    if (!any.length) return null;
+    // 조건에 맞는 자리가 없으면 가장 가까운 자리에서 나온다
+    any.sort((a, b) => a.d - b.d);
+    return any[0].l;
+  },
+
+  makeFigure(x, y, mode) {
+    const P = this.player;
+    this.figure = {
+      x, y, mode,
+      t: U.rand(2.6, 4.6),
+      farT: 0, lostT: 0, hunt: null, prowlT: 0, prowlTo: null,
+      flow: null, flowT: 0, stepT: 0,
+      lastSeen: { x: P.x + 4, y: P.y + 4 }
+    };
+    Snd.breath();
+    if (mode === 'chase') Snd.startChase();
+    return this.figure;
   },
 
   spawnFigure(mode, behind, opt = {}) {
@@ -508,19 +635,37 @@ const Game = {
     const angle = opt.angle !== undefined ? opt.angle
                 : behind ? (P.face > 0 ? Math.PI : 0) : null;
     const spread = opt.spread !== undefined ? opt.spread : 1.0;
-    const spot = this.pickFigureSpot(opt.min || 96, opt.max || 168, angle, spread);
+    const spot = this.pickLair(opt.min || 96, opt.max || 220, angle, spread);
     if (!spot) return false;
-
-    this.figure = {
-      x: spot.x, y: spot.y, mode,
-      t: U.rand(2.6, 4.6),
-      farT: 0, lostT: 0, hunt: null,
-      flow: null, flowT: 0, stepT: 0,
-      lastSeen: { x: P.x + 4, y: P.y + 4 }
-    };
-    Snd.breath();
-    if (mode === 'chase') Snd.startChase();
+    this.makeFigure(spot.x, spot.y, mode);
     return true;
+  },
+
+  /* 처음부터 서 있던 것이 이쪽을 알아챈다 */
+  updSentries() {
+    if (!this.sentries.length || this.figure || this.hiding || this.locked) return;
+    const P = this.player, px = P.x + 4, py = P.y + 4;
+    for (let i = 0; i < this.sentries.length; i++) {
+      const s = this.sentries[i];
+      if (U.dist(px, py, s.x, s.y) > this.WAKE_D) continue;
+      this.sentries.splice(i, 1);
+      const mode = this.defaultMode();
+      this.makeFigure(s.x, s.y, mode);
+      if (mode === 'chase')
+        Narrator.flash('…서 있던 것이, 이쪽으로 고개를 돌렸다.', { bad: true, dur: 3.8 });
+      return;
+    }
+  },
+
+  /* 상자 안에 있던 것이 밖으로 걸어 나온다 */
+  convertToChase(F) {
+    F.mode = 'chase';
+    F.becomes = null;
+    F.t = 0; F.farT = 0; F.lostT = 0; F.prowlT = 0; F.prowlTo = null;
+    F.hunt = null; F.flow = null; F.flowT = 0; F.stepT = 0;
+    F.lastSeen = { x: this.player.x + 4, y: this.player.y + 4 };
+    Snd.startChase();
+    Narrator.flash('그것이 상자 밖으로 발을 내디뎠다.', { bad: true, dur: 4.0 });
   },
 
   /* 모퉁이를 돌자마자 눈앞에 서 있는 순간 */
@@ -541,7 +686,7 @@ const Game = {
     if (!U.chance(this.stageIdx === 0 ? 0.028 : 0.015)) return;
     const ahead = Math.atan2(this.moveDir.y, this.moveDir.x);
     this.spawnFigure(this.defaultMode(), false,
-      { angle: ahead, spread: 0.55, min: 68, max: 120 });
+      { angle: ahead, spread: 0.7, min: 64, max: 150 });
   },
 
   updFigure(dt) {
@@ -552,7 +697,10 @@ const Game = {
 
     if (F.mode === 'inside') {
       F.t -= dt;
-      if (F.t <= 0) this.figure = null;
+      if (F.t <= 0) {
+        if (F.becomes === 'chase') this.convertToChase(F);
+        else this.figure = null;
+      }
       return;
     }
 
@@ -563,17 +711,25 @@ const Game = {
       return;
     }
 
-    /* ---- 추격 ---- */
-    const target = this.hiding ? (F.hunt || F.lastSeen) : { x: px, y: py };
+    /* ---- 추격 ----
+       숨어 있으면 목표가 달라진다.
+         · 들킨 경우(hunt)   — 숨은 자리로 곧장, 아주 느리게 다가온다
+         · 못 본 경우(prowl) — 마지막으로 본 자리 근처를 서성인다 */
+    let target;
+    if (this.hiding) target = F.hunt || F.prowlTo || F.lastSeen;
+    else target = { x: px, y: py };
+
     F.flowT -= dt;
     if (F.flowT <= 0) { F.flow = this.buildFlow(target); F.flowT = 0.4; }
 
+    const speed = this.SPEED * (F.hunt ? this.CREEP_SPEED : this.FIG_SPEED);
     const bx = F.x, by = F.y;
-    this.flowStep(F, this.SPEED * this.FIG_SPEED, dt);
+    this.flowStep(F, speed, dt);
 
     // 갈 길을 못 찾고 굳어버리는 경우가 있다(닿을 수 없는 자리에 선 경우 등).
     // 그대로 두면 화면 어딘가에 영원히 서 있게 되므로 잠시 뒤 사라지게 한다.
-    if (Math.hypot(F.x - bx, F.y - by) < 0.05) {
+    // 숨은 자리 앞에 도착해 멈춰 선 것은 굳은 것이 아니다 — 세지 않는다.
+    if (!F.hunt && !this.hiding && Math.hypot(F.x - bx, F.y - by) < 0.05) {
       F.stuckT = (F.stuckT || 0) + dt;
       if (F.stuckT > 3) { this.dropFigure(true); return; }
     } else F.stuckT = 0;
@@ -584,20 +740,12 @@ const Game = {
     Snd.setChaseIntensity(this.chaseProx);
     F.stepT -= dt;
     if (F.stepT <= 0) {
-      F.stepT = U.rand(0.44, 0.54);
+      // 다가올 때는 걸음이 느려진다. 간격이 벌어지는 것 자체가 신호다.
+      F.stepT = F.hunt ? U.rand(0.95, 1.20) : U.rand(0.44, 0.54);
       Snd.figStep(U.clamp((F.x - px) / 220, -1, 1), U.clamp(1.1 - dist / 300, 0.12, 1));
     }
 
-    if (this.hiding) {
-      if (F.hunt) {
-        // 들켰다 — 숨은 자리를 정확히 찾아온다
-        if (U.dist(F.hunt.x, F.hunt.y, F.x, F.y) < 15) { this.death('found'); }
-      } else {
-        F.lostT += dt;
-        if (F.lostT > 6.5) this.dropFigure(true);
-      }
-      return;
-    }
+    if (this.hiding) { this.updHidden(F, dt, dist); return; }
 
     F.lastSeen.x = px; F.lastSeen.y = py;
     if (dist < this.CATCH_D) { this.death('caught'); return; }
@@ -605,6 +753,74 @@ const Game = {
       F.farT += dt;
       if (F.farT > 2.5) this.dropFigure(true);
     } else F.farT = 0;
+  },
+
+  /* 숨어 있는 동안.
+     여기서 갈리는 두 가지가 이 게임에서 가장 긴 시간이다 —
+     문틈으로 발소리가 멀어지는 것을 듣거나, 가까워지는 것을 듣거나. */
+  updHidden(F, dt, dist) {
+    const spot = this.hiding.spot;
+
+    /* --- 들켰다 : 천천히 다가온다. 화면이 그 박자에 맞춰 명멸한다. --- */
+    if (F.hunt) {
+      const d = U.dist(F.hunt.x, F.hunt.y, F.x, F.y);
+      // 숨은 물건 자체가 막힌 칸이라 바로 앞 칸까지밖에 못 온다.
+      // 한 칸(16px) 남은 자리를 "도착" 으로 보고, 거기서 잠깐 서 있게 한다 —
+      // 문이 열리기 직전의 그 정적이 이 연출의 전부다.
+      const arrived = d < 30;
+      if (arrived) F.arriveT = (F.arriveT || 0) + dt;
+
+      const near = arrived ? 1 : U.clamp(1 - d / 190, 0, 1);
+      // 가까울수록 빠르고 깊게 깜빡인다
+      const beat = Math.sin(this.time * (7 + near * 24));
+      this.flick = beat > 0 ? Math.pow(beat, 3) * (0.30 + near * 0.62) : 0;
+      Snd.setDirge(near);
+
+      if (F.arriveT > 1.1) this.death('found');
+      return;
+    }
+
+    /* --- 못 봤다 : 주변을 서성이다 사라진다 --- */
+    this.flick = 0;
+    F.lostT += dt;
+
+    // 문 앞을 스치면 그제야 알아챈다
+    if (U.dist(spot.x, spot.y, F.x, F.y) < this.HIDE_FIND_D) { this.spotted(F, '바로 앞에서 발소리가 멈췄다.'); return; }
+
+    // 마지막으로 본 자리 언저리를 돌아다닌다
+    F.prowlT -= dt;
+    if (F.prowlT <= 0 || !F.prowlTo) {
+      F.prowlTo = this.prowlPoint(F.lastSeen);
+      F.prowlT = U.rand(1.6, 2.8);
+      F.flowT = 0;
+    }
+    if (F.lostT > this.PROWL_T) this.dropFigure(true);
+  },
+
+  /* 마지막으로 본 자리 주변에서 어슬렁거릴 지점 하나 */
+  prowlPoint(from) {
+    const m = this.map, T = m.T;
+    for (let i = 0; i < 24; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = U.rand(30, 120);
+      const tx = ((from.x + Math.cos(a) * r) / T) | 0;
+      const ty = ((from.y + Math.sin(a) * r) / T) | 0;
+      if (tx < 0 || ty < 0 || tx >= m.W || ty >= m.H) continue;
+      if (Levels.solid(m, tx, ty)) continue;
+      return { x: tx * T + T / 2, y: ty * T + T - 2 };
+    }
+    return { x: from.x, y: from.y };
+  },
+
+  /* 숨은 자리를 들켰다 */
+  spotted(F, line) {
+    const spot = this.hiding.spot;
+    F.hunt = { x: spot.x, y: spot.y };
+    F.flowT = 0;
+    F.stepT = 0.5;
+    Snd.stopChase();
+    Snd.startDirge();
+    Narrator.flash(line, { bad: true, dur: 4.4 });
   },
 
   /* 목표 지점까지의 거리장. 타일이 몇 안 되니 매번 새로 만들어도 싸다. */
@@ -671,7 +887,7 @@ const Game = {
   },
 
   /* ---------------- 숨기 ---------------- */
-  nearestContainer(pcx, pcy) {
+  nearestHide(pcx, pcy) {
     const T = this.map.T;
     let best = null, bd = 30;
     for (const pr of this.map.props) {
@@ -684,20 +900,20 @@ const Game = {
 
   tryHide(pr) {
     const T = this.map.T, F = this.figure;
-    this.hiding = { pr };
+    this.hiding = { pr, spot: { x: pr.tx * T + T / 2, y: pr.ty * T + T - 2 } };
+    this.flick = 0;
     this.setHint('');
     Snd.creak(0.45);
 
     if (F && F.mode === 'chase') {
+      F.lostT = 0;
+      F.prowlT = 0; F.prowlTo = null;
       const d = U.dist(this.player.x + 4, this.player.y + 4, F.x, F.y);
       if (d < this.SEEN_D) {
-        // 보고 있는 앞에서 들어갔다 — 문을 열러 온다
-        F.hunt = { x: pr.tx * T + T / 2, y: pr.ty * T + T - 2 };
-        F.flowT = 0;
-        Narrator.flash('…봤을 것이다.', { bad: true, dur: 3.6 });
+        // 보고 있는 앞에서 들어갔다 — 서두르지 않는다. 어디로 들어갔는지 알고 있으니까.
+        this.spotted(F, '…들어가는 것을, 봤다.');
         return;
       }
-      F.lostT = 0;
     }
     Narrator.flash('숨을 죽였다.', { dur: 2.8 });
   },
@@ -705,18 +921,22 @@ const Game = {
   exitHide() {
     const F = this.figure;
     this.hiding = null;
+    this.flick = 0;
+    this.stepDist = this.STRIDE * 0.7;
     Snd.creak(0.35);
     if (F && F.mode === 'chase' &&
-        U.dist(this.player.x + 4, this.player.y + 4, F.x, F.y) < 34) this.death('caught');
+        U.dist(this.player.x + 4, this.player.y + 4, F.x, F.y) < 40) this.death('caught');
   },
 
   /* ---------------- 죽음 ---------------- */
   death(kind) {
     if (this.state !== 'play') return;
+    const found = kind === 'found';
     this.state = 'dead';
     this.locked = true;
     this.hiding = null;
     this.searchT = 0;
+    this.flick = 0;
     this.setHint('');
     Narrator.clear();
     Narrator.clearFlash();
@@ -725,14 +945,17 @@ const Game = {
     Snd.sting();
     Snd.thump(0.15, 0.9);
     Snd.setAmbience(0.25, 1.2);
+    // 문이 열리는 순간까지는 기괴한 음이 깔려 있다가, 열리면서 끊긴다
+    if (found) { Snd.creak(0.9); setTimeout(() => Snd.stopDirge(), 900); }
+    else Snd.stopDirge();
 
     // 그것을 눈앞에 세운다
     const P = this.player;
     this.figure = { x: P.x + 4, y: P.y + 12, mode: 'inside', t: 1e9 };
     this.chaseProx = 0;
 
-    const line = kind === 'found'
-      ? '옷장 문이, 밖에서 열렸다.'
+    const line = found
+      ? '문이, 밖에서 열렸다.'
       : '어깨에 손이 닿았다.';
 
     this.setTimeline([
@@ -755,7 +978,8 @@ const Game = {
   /* 손전등 : 꺼졌다 깜빡이며 돌아오는 구간 / 숨어 있는 동안은 문틈만큼 */
   torchScale() {
     if (this.state === 'dead') return Math.max(0.1, 1 - this.tlT * 0.55);
-    if (this.hiding) return 0.3;
+    // 들킨 뒤에는 문틈마저 좁아진다
+    if (this.hiding) return (this.figure && this.figure.hunt) ? 0.21 : 0.3;
 
     let s = 1;
     const t = this.torchOutT;
@@ -828,8 +1052,7 @@ const Game = {
         P.face = dx > 0 ? 1 : -1;
         P.walk += dt * 6;
         P.moving = true;
-        this.stepT -= dt;
-        if (this.stepT <= 0) { Snd.step(); this.stepT = 0.5; }
+        this.footstep(sp);
       }
     }
     this.followCam(P.x + 4, P.y + 4, dt, 4);
@@ -921,9 +1144,16 @@ const Game = {
     if (this.cat && this.cat.alive) order.push({ y: this.cat.y, kind: 'cat' });
     // 숨어 있는 동안은 주인공을 그리지 않는다 — 상자 문이 닫혀 있는 상태
     if (this.player && !this.hiding) order.push({ y: this.player.y + this.player.h, kind: 'man' });
+    // 아직 깨어나지 않고 서 있는 것들. 빛을 내지 않으니 손전등이 닿아야 보인다.
+    for (const s of this.sentries) {
+      const sx = s.x - cam.x, sy = s.y - cam.y;
+      if (sx < -40 || sx > R.W + 40 || sy < -60 || sy > R.H + 40) continue;
+      order.push({ y: s.y, kind: 'figure', f: s });
+    }
     if (this.figure) {
       // 물건 안에서 나타난 경우엔 그 물건에 가리면 안 되므로 맨 나중에
-      order.push({ y: this.figure.mode === 'inside' ? 1e8 : this.figure.y, kind: 'figure' });
+      order.push({ y: this.figure.mode === 'inside' ? 1e8 : this.figure.y,
+                   kind: 'figure', f: this.figure });
     }
     order.sort((a, b) => a.y - b.y);
 
@@ -931,7 +1161,7 @@ const Game = {
       if (o.kind === 'prop') {
         const pr = o.pr;
         const variant = (pr.tx * 3 + pr.ty) & 3;
-        const opened = pr.searched && Levels.CONTAINER.has(pr.n);
+        const opened = pr.searched && Levels.OPENABLE.has(pr.n);
         const p = opened ? Props.getOpen(pr.n, variant) : Props.get(pr.n, variant);
         if (!p) continue;
         // 이미 뒤진 것은 한 톤 눌러 둔다
@@ -939,7 +1169,7 @@ const Game = {
         if (p.light)
           lights.push({ x: o.sx + p.light.dx, y: o.sy + p.light.dy, r: p.light.r, i: p.light.i });
       } else if (o.kind === 'figure') {
-        const F = this.figure;
+        const F = o.f;
         const fx = Math.round(F.x - cam.x), fy = Math.round(F.y - cam.y);
         R.outline(SPR.FIGURE, fx - 6, fy - 31);
         R.sprite(SPR.FIGURE, fx - 6, fy - 31);
@@ -978,7 +1208,8 @@ const Game = {
 
     // ambient 를 아주 조금만 준다. 밝은 재질(건물 입면·갓돌)만 겨우 드러나고
     // 바닥은 crush 임계값 아래라 완전한 검정으로 남는다 — 멀리 구조물 윤곽만 보이는 상태.
-    R.present(lights, this.fade, 0.032, 0.05);
+    // 들킨 채 숨어 있는 동안에는 화면 전체가 명멸한다.
+    R.present(lights, this.fade * (1 - this.flick), 0.032 + this.flick * 0.06, 0.05);
   }
 };
 

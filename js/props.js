@@ -54,7 +54,8 @@ const Props = {
   /* 바닥·벽과 톤이 겹쳐 묻히는 물체들. 실루엣 둘레를 어둡게 따 준다.
      빛을 내는 것(lamp/bulb)과 이어 붙는 것(pipe)·바닥 얼룩(puddle)은 제외. */
   RIMMED: new Set(['bench', 'rock', 'bin', 'drum', 'crate', 'pallet', 'sign', 'table',
-                   'chair', 'bed', 'cabinet', 'shelf', 'plant', 'boiler', 'barrel', 'stairs']),
+                   'chair', 'bed', 'cabinet', 'shelf', 'plant', 'boiler', 'barrel', 'stairs',
+                   'locker']),
 
   get(name, variant = 0) {
     const k = name + variant;
@@ -305,6 +306,34 @@ const Props = {
       b.set(7, 13, 0.95); b.set(11, 13, 0.95);   // 손잡이
       b.rect(0, 26, 18, 1, 0.16);
       b.hl(1, 27, 16, 0.04);
+      return b;
+    },
+
+    /* 철제 사물함 — 뒤질 것은 없고, 사람 하나가 들어갈 수 있다.
+       옷장보다 좁고 각져서 "숨는 자리" 로만 읽히게 그린다. */
+    locker(rnd) {
+      const b = PBuf(16, 32); b.ax = 8; b.ay = 31;
+      b.rect(0, 0, 16, 30, 0.50);            // 몸통
+      b.rect(1, 2, 14, 27, 0.20);            // 문짝
+      b.hl(0, 0, 16, 0.72);                  // 윗면
+      b.hl(1, 1, 14, 0.58);
+      b.vl(1, 2, 27, 0.44);                  // 문 왼쪽 모서리
+      b.vl(14, 2, 27, 0.10);
+      // 통풍구 : 가는 가로 슬릿 셋
+      for (let i = 0; i < 3; i++) {
+        const y = 5 + i * 3;
+        b.hl(4, y, 8, 0.62);
+        b.hl(4, y + 1, 8, 0.04);
+      }
+      b.rect(11, 16, 1, 4, 0.92);             // 손잡이
+      b.set(11, 15, 0.70);
+      b.rect(0, 29, 16, 1, 0.14);             // 다리
+      b.set(1, 30, 0.22); b.set(14, 30, 0.22);
+      b.hl(2, 31, 12, 0.04);
+      for (let i = 0; i < 18; i++) {          // 녹·긁힘
+        const x = 2 + ((rnd() * 12) | 0), y = 3 + ((rnd() * 25) | 0);
+        b.over(x, y, rnd() < 0.5 ? 0.30 : 0.10);
+      }
       return b;
     },
 

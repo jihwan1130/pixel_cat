@@ -51,6 +51,8 @@ const Tiles = {
       case 'curb':   this.curb(a, rnd, th, mask); break;
       case 'fence':  this.fence(a, rnd, th, mask); break;
       case 'door':   this.door(a, rnd, th, mask); break;
+      case 'gate':   this.gate(a, rnd, th, mask, false); break;
+      case 'gateOpen': this.gate(a, rnd, th, mask, true); break;
       case 'window': this.wall(a, rnd, th, mask, true); break;
       default:       this.wall(a, rnd, th, mask, false); break;
     }
@@ -192,6 +194,47 @@ const Tiles = {
     this.rc(a, 5, fy + 2, 6, 3, 0.20);
     this.st(a, 10, fy + 4, 0.95);                  // 손잡이
     this.st(a, 10, fy + 5, 0.72);
+  },
+
+  /* ---------------- 철문 ----------------
+     통로를 가로막는 쇠창살. 열리면 창살이 양옆으로 접히고 바닥이 드러난다.
+     닫혀 있을 때도 살 사이로 건너편이 비쳐야 "지나갈 수 있는 곳" 으로 읽힌다. */
+  gate(a, rnd, th, mask, open) {
+    // 바닥을 먼저 깔고 그 위에 쇠를 세운다
+    this.floor(a, rnd, th, 15);
+
+    const bar = 0.86, dark = 0.02, frame = 0.62;
+
+    if (open) {
+      // 접힌 창살 — 양쪽 벽에 붙어 있다
+      for (const x of [0, 1, 14, 15]) this.vl(a, x, 0, 16, bar * 0.7);
+      this.vl(a, 2, 0, 16, 0.30); this.vl(a, 13, 0, 16, 0.30);
+      this.hl(a, 0, 0, 16, frame * 0.5);
+      this.hl(a, 0, 15, 16, 0.05);
+      return;
+    }
+
+    // 문틀
+    this.vl(a, 0, 0, 16, frame);
+    this.vl(a, 15, 0, 16, frame);
+    // 세로 창살 : 살 옆에 그림자를 붙여 두께를 만든다
+    for (let x = 2; x < 15; x += 4) {
+      this.vl(a, x, 0, 16, bar);
+      this.vl(a, x + 1, 0, 16, dark);
+    }
+    // 가로 띠
+    for (const y of [3, 12]) {
+      this.hl(a, 0, y, 16, bar * 0.9);
+      this.hl(a, 0, y + 1, 16, dark);
+    }
+    // 자물쇠 — 살 한가운데 걸린 덩어리
+    this.rc(a, 6, 6, 4, 5, 0.16);
+    this.hl(a, 6, 6, 4, 0.95);
+    this.vl(a, 6, 6, 5, 0.72);
+    this.rc(a, 7, 4, 2, 2, 0.80);
+    this.st(a, 8, 8, 0.04);
+    // 녹
+    for (let i = 0; i < 14; i++) this.st(a, (rnd() * 16) | 0, (rnd() * 16) | 0, 0.24);
   },
 
   /* 벽면 한 구간을 재질에 맞춰 칠한다 */
