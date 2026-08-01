@@ -1085,6 +1085,26 @@ const Game = {
     const map = this.map, T = map.T;
     const lights = [];
 
+    /* --- 손전등 : 위치·도달 반경을 먼저 정한다 ---
+       그것(대기 중이든 쫓아오는 중이든)은 오직 이 반경 안에 있을 때만 그린다.
+       가로등·전구 같은 정적 조명은 바닥·벽을 밝히는 데는 쓰이지만,
+       그것의 존재를 미리 드러내는 등대가 되어서는 안 된다. */
+    let torchX = 0, torchY = 0, torchR = 0;
+    if (this.player) {
+      const P = this.player;
+      torchX = Math.round(P.x - cam.x) + 4;
+      torchY = Math.round(P.y - cam.y) + 2;
+      const fl = 1 + Math.sin(this.time * 7.3) * 0.018 + Math.sin(this.time * 21.7) * 0.01;
+      const base = this.state === 'intro' ? this.TORCH + 14 : this.TORCH;
+      torchR = base * fl * this.torchScale();
+      lights.push({ x: torchX, y: torchY, r: torchR, i: 1 });
+    }
+    const inTorch = (sx, sy) => {
+      if (torchR <= 0) return false;
+      const dx = sx - torchX, dy = (sy - torchY) * 1.15;   // 렌더러의 광원 감쇠와 같은 종횡비
+      return dx * dx + dy * dy < torchR * torchR;
+    };
+
     /* --- 타일 --- */
     const tx0 = Math.max(0, (cam.x / T) | 0);
     const ty0 = Math.max(0, (cam.y / T) | 0);
@@ -1115,20 +1135,25 @@ const Game = {
     if (this.cat && this.cat.alive) order.push({ y: this.cat.y, kind: 'cat' });
     // 숨어 있는 동안은 주인공을 그리지 않는다 — 상자 문이 닫혀 있는 상태
     if (this.player && !this.hiding) order.push({ y: this.player.y + this.player.h, kind: 'man' });
-    // 아직 깨어나지 않고 서 있는 것들. 빛을 내지 않으니 손전등이 닿아야 보인다.
-    // 이미 다른 그것이 활동 중일 때는 그리지 않는다 — 어차피 깨어날 수 없는데
-    // 정적 조명(가로등·전구) 아래 있으면 정지된 채로 보여 버리기 때문.
+    // 아직 깨어나지 않고 서 있는 것들. 손전등이 실제로 닿을 때만 그린다 —
+    // 가로등·전구 같은 정적 조명 반경에 걸렸다고 미리 드러나면 안 된다.
+    // 이미 다른 그것이 활동 중일 때도 그리지 않는다 — 어차피 깨어날 수 없다.
     if (!this.figure) {
       for (const s of this.sentries) {
         const sx = s.x - cam.x, sy = s.y - cam.y;
         if (sx < -40 || sx > R.W + 40 || sy < -60 || sy > R.H + 40) continue;
+        if (!inTorch(sx, sy)) continue;
         order.push({ y: s.y, kind: 'figure', f: s });
       }
     }
     if (this.figure) {
-      // 물건 안에서 나타난 경우엔 그 물건에 가리면 안 되므로 맨 나중에
-      order.push({ y: this.figure.mode === 'inside' ? 1e8 : this.figure.y,
-                   kind: 'figure', f: this.figure });
+      const fsx = this.figure.x - cam.x, fsy = this.figure.y - cam.y;
+      // 물건 안에서 나타난 경우엔 상자를 연 직후라 늘 손전등 안이다. 그 외에는
+      // 실제로 손전등이 닿을 때만 그린다 — 쫓아오는 동안에도 어둠 속에서는 안 보여야 한다.
+      if (this.figure.mode === 'inside' || inTorch(fsx, fsy)) {
+        order.push({ y: this.figure.mode === 'inside' ? 1e8 : this.figure.y,
+                     kind: 'figure', f: this.figure });
+      }
     }
     order.sort((a, b) => a.y - b.y);
 
@@ -1170,15 +1195,6 @@ const Game = {
         R.outline(frame, px - 2, py - 13, P.face < 0);
         R.sprite(frame, px - 2, py - 13, P.face < 0);
       }
-    }
-
-    /* --- 손전등 --- */
-    if (this.player) {
-      const P = this.player;
-      const px = Math.round(P.x - cam.x) + 4, py = Math.round(P.y - cam.y) + 2;
-      const fl = 1 + Math.sin(this.time * 7.3) * 0.018 + Math.sin(this.time * 21.7) * 0.01;
-      const base = this.state === 'intro' ? this.TORCH + 14 : this.TORCH;
-      lights.push({ x: px, y: py, r: base * fl * this.torchScale(), i: 1 });
     }
 
     // ambient 를 아주 조금만 준다. 밝은 재질(건물 입면·갓돌)만 겨우 드러나고
