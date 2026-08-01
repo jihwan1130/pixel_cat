@@ -71,12 +71,19 @@ const Game = {
     this._perf = { t: 0, n: 0, done: false };
 
     let last = performance.now();
+    this._faults = 0;
     const loop = now => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      this.update(dt);
-      this.draw();
-      this.trackPerf(dt);
+      // 한 프레임에서 터진 예외가 루프를 끊으면 requestAnimationFrame 이 다시 걸리지 않아
+      // 화면이 그대로 굳는다. 게임이 통째로 멈추는 것보다는 그 프레임을 버리는 편이 낫다.
+      try {
+        this.update(dt);
+        this.draw();
+        this.trackPerf(dt);
+      } catch (e) {
+        if (this._faults++ < 5) console.error('[loop] 프레임을 건너뛴다:', e);
+      }
       Input.endFrame();
       requestAnimationFrame(loop);
     };
@@ -520,15 +527,14 @@ const Game = {
     const T = this.map.T;
     const kinds = ['figure', 'torch', 'bell', 'deep', 'behind'];
     switch (kinds[(pr.tx * 7 + pr.ty * 13) % kinds.length]) {
-      case 'figure':
+      case 'figure': {
         Narrator.flash('…안에 누군가 서 있었다.', { bad: true, dur: 4.4 });
         Snd.sting();
-        this.figure = {
-          x: pr.tx * T + T / 2, y: pr.ty * T + T - 2,
-          t: this.stageIdx === 0 ? 0.6 : 1.1, mode: 'inside',
-          becomes: this.stageIdx === 0 ? null : 'chase'
-        };
+        const F = this.figure = this.newFigure(pr.tx * T + T / 2, pr.ty * T + T - 2, 'inside');
+        F.t = this.stageIdx === 0 ? 0.6 : 1.1;
+        F.becomes = this.stageIdx === 0 ? null : 'chase';
         break;
+      }
       case 'torch':
         Narrator.flash('여는 순간 손전등이 꺼졌다.', { bad: true, dur: 4.4 });
         Snd.thump(0, 0.7);
@@ -566,16 +572,26 @@ const Game = {
     if (whoosh) Snd.whoosh();
   },
 
-  makeFigure(x, y, mode) {
+  /* 그것 하나를 만든다.
+     필드 구성은 반드시 여기 한 곳에서만 정한다. 다른 데서 객체 리터럴로 찍어 내면
+     필드가 하나씩 빠지고, 그 빠진 필드를 읽는 순간 update() 안에서 예외가 난다.
+     그러면 requestAnimationFrame 이 다시 걸리지 않아 화면이 그대로 멈춘다 —
+     실제로 옷장에서 나온 그것이 걷기 시작할 때 그렇게 멈췄다. */
+  newFigure(x, y, mode) {
     const P = this.player;
-    this.figure = {
-      x, y, mode,
+    const px = P.x + 4, py = P.y + 4;
+    return {
+      x, y, mode, becomes: null,
       t: 3.4,                  // 응시 시간. 판마다 달라지면 안 되므로 고정값이다.
       farT: 0, lostT: 0, hunt: null, prowlT: 0, prowlTo: null, missT: 0,
-      flow: null, flowT: 0, stepT: 0,
-      lastSeen: { x: P.x + 4, y: P.y + 4 },
-      trail: { x: P.x + 4, y: P.y + 4 }
+      flow: null, flowT: 0, stepT: 0, stuckT: 0, arriveT: 0,
+      lastSeen: { x: px, y: py },
+      trail: { x: px, y: py }
     };
+  },
+
+  makeFigure(x, y, mode) {
+    this.figure = this.newFigure(x, y, mode);
     Snd.breath();
     if (mode === 'chase') Snd.startChase();
     return this.figure;
@@ -607,11 +623,14 @@ const Game = {
 
   /* 상자 안에 있던 것이 밖으로 걸어 나온다 */
   convertToChase(F) {
+    const px = this.player.x + 4, py = this.player.y + 4;
     F.mode = 'chase';
     F.becomes = null;
-    F.t = 0; F.farT = 0; F.lostT = 0; F.prowlT = 0; F.prowlTo = null;
-    F.hunt = null; F.flow = null; F.flowT = 0; F.stepT = 0;
-    F.lastSeen = { x: this.player.x + 4, y: this.player.y + 4 };
+    F.t = 0; F.farT = 0; F.lostT = 0; F.prowlT = 0; F.prowlTo = null; F.missT = 0;
+    F.hunt = null; F.flow = null; F.flowT = 0; F.stepT = 0; F.stuckT = 0; F.arriveT = 0;
+    // 뚜껑을 연 사람이 바로 앞에 있다. 지금 이 자리가 곧 마지막으로 본 자리다.
+    F.lastSeen = { x: px, y: py };
+    F.trail = { x: px, y: py };
     Snd.startChase();
     Narrator.flash('그것이 상자 밖으로 발을 내디뎠다.', { bad: true, dur: 4.0 });
   },
@@ -892,7 +911,8 @@ const Game = {
 
     // 그것을 눈앞에 세운다
     const P = this.player;
-    this.figure = { x: P.x + 4, y: P.y + 12, mode: 'inside', t: 1e9 };
+    this.figure = this.newFigure(P.x + 4, P.y + 12, 'inside');
+    this.figure.t = 1e9;
     this.chaseProx = 0;
 
     const line = found
@@ -943,11 +963,21 @@ const Game = {
 
   enterDoor() {
     this.locked = true;
+    // 문을 닫으면 따라오지 못한다.
+    // 이걸 놓으면 암전되는 2초 동안 움직이지도 못한 채 쫓기던 것에게 잡히고,
+    // 이미 예약된 다음 스테이지와 죽음 연출이 동시에 진행된다.
+    this.dropFigure(false);
     Snd.creak();
     this.fadeTo(0, 1.8);
+    const from = this.stageIdx;
+    const go = () => {
+      // 그 사이에 판이 바뀌었거나 죽었다면 이 예약은 무효다
+      if (this.state !== 'play' || this.stageIdx !== from) return;
+      this.startStage(from + 1);
+    };
     setTimeout(() => {
-      Narrator.say(['문 너머에서, 아주 작게 울음소리가 났다.'],
-        () => this.startStage(this.stageIdx + 1));
+      if (this.state !== 'play' || this.stageIdx !== from) return;
+      Narrator.say(['문 너머에서, 아주 작게 울음소리가 났다.'], go);
     }, 2000);
   },
 
