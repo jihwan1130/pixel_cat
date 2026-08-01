@@ -1,4 +1,4 @@
-/* -------------------------------------------------------------------------
+﻿/* -------------------------------------------------------------------------
    고양이를 찾아서 — 게임 본체
    title → intro(공원 연출) → play(골목 / 낡은 건물 / 지하) → ending → end
 ------------------------------------------------------------------------- */
@@ -39,7 +39,11 @@ const Game = {
 
   /* --------------------------------------------------------------- */
   init() {
-    R.init(document.getElementById('game'));
+    TouchPad.init();
+    // 휴대폰에서는 내부 해상도를 한 단계 낮춘다.
+    // 픽셀당 비용이 큰 렌더러라 화면 크기가 그대로 프레임 시간이 된다.
+    if (TouchPad.enabled) R.init(document.getElementById('game'), 416, 234);
+    else R.init(document.getElementById('game'));
     Input.init();
     Narrator.init();
 
@@ -47,16 +51,35 @@ const Game = {
     this.el.stageTitle = document.getElementById('stage-title');
     this.el.hint = document.getElementById('hint');
 
+    this._perf = { t: 0, n: 0, done: false };
+
     let last = performance.now();
     const loop = now => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       this.update(dt);
       this.draw();
+      this.trackPerf(dt);
       Input.endFrame();
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);
+  },
+
+  /* 픽셀당 비용이 큰 렌더러라 느린 기기에서는 그냥 버벅인다.
+     처음 3초를 재 보고 못 따라오면 내부 해상도를 한 단계 더 내린다. */
+  trackPerf(dt) {
+    const p = this._perf;
+    if (p.done || this.state === 'title') return;
+    if (dt >= 0.049) return;             // 탭이 멈췄던 프레임은 표본에서 뺀다
+    p.t += dt; p.n++;
+    if (p.n < 180) return;
+    p.done = true;
+    const avg = p.t / p.n;
+    if (avg > 0.026 && R.W > 360) {
+      R.init(document.getElementById('game'), 352, 198);
+      console.info('[perf] 평균 ' + Math.round(avg * 1000) + 'ms — 내부 해상도를 낮춘다');
+    }
   },
 
   /* ---- 페이드 ---- */
@@ -83,7 +106,10 @@ const Game = {
     clearTimeout(this._stT);
     this._stT = setTimeout(() => this.el.stageTitle.classList.remove('on'), dur * 1000);
   },
-  setHint(text) {
+  /* action=true 인 힌트는 대상에서 멀어지면 자동으로 지운다.
+     문구로 판별하면 모바일 문구를 바꿀 때마다 깨진다 — 플래그로 둔다. */
+  setHint(text, action = false) {
+    this._actionHint = !!text && action;
     if (text) { this.el.hint.textContent = text; this.el.hint.classList.add('on'); }
     else { this.el.hint.classList.remove('on'); this.el.hint.textContent = ''; }
   },
@@ -130,7 +156,7 @@ const Game = {
 
     this.fade = 0;
     this.fadeTo(1, 2.8);
-    this.setHint('SPACE — 건너뛰기');
+    this.setHint(TouchPad.enabled ? 'E — 건너뛰기' : 'SPACE — 건너뛰기');
 
     const P = this.player, C = this.cat;
     this.setTimeline([
@@ -153,7 +179,7 @@ const Game = {
   },
 
   updIntro(dt) {
-    if (this.tlT > 1.0 && Input.pressed(' ', 'enter', 'escape')) {
+    if (this.tlT > 1.0 && Input.pressed(' ', 'enter', 'escape', 'e')) {
       Narrator.clear(); this.setHint(''); this.tl = [];
       this.fadeTo(0, 0.5);
       setTimeout(() => this.startStage(0), 560);
@@ -221,7 +247,9 @@ const Game = {
       if (this.state !== 'play') return;
       Narrator.say(m.lines, () => {
         this.locked = false;
-        this.setHint('W A S D — 이동   ·   E — 열고 뒤지기');
+        this.setHint(TouchPad.enabled
+          ? '왼쪽을 끌어 이동   ·   E — 열고 뒤지기'
+          : 'W A S D — 이동   ·   E — 열고 뒤지기');
         setTimeout(() => this.setHint(''), 4500);
       });
     }, 1700);
@@ -241,19 +269,15 @@ const Game = {
       if (this.locked && Input.pressed(' ', 'enter', 'e')) Narrator.advance();
       P.moving = false;
     } else {
-      let dx = 0, dy = 0;
-      if (Input.held('a', 'arrowleft')) dx -= 1;
-      if (Input.held('d', 'arrowright')) dx += 1;
-      if (Input.held('w', 'arrowup')) dy -= 1;
-      if (Input.held('s', 'arrowdown')) dy += 1;
-      if (dx || dy) {
-        const l = Math.hypot(dx, dy);
-        this.moveAxis(P, dx / l * this.SPEED * dt, 0);
-        this.moveAxis(P, 0, dy / l * this.SPEED * dt);
-        if (dx) P.face = dx > 0 ? 1 : -1;
-        P.walk += dt * 7;
+      const mv = Input.move();
+      if (mv.m > 0) {
+        const sp = this.SPEED * mv.m;
+        this.moveAxis(P, mv.x * sp * dt, 0);
+        this.moveAxis(P, 0, mv.y * sp * dt);
+        if (Math.abs(mv.x) > 0.25) P.face = mv.x > 0 ? 1 : -1;
+        P.walk += dt * 7 * mv.m;
         P.moving = true;
-        this.stepT -= dt;
+        this.stepT -= dt * mv.m;
         if (this.stepT <= 0) { Snd.step(); this.stepT = 0.42; }
       } else P.moving = false;
     }
@@ -282,8 +306,8 @@ const Game = {
         }
       }
     }
-    if (hint) this.setHint(hint);
-    else if (this.el.hint.textContent.startsWith('E —')) this.setHint('');
+    if (hint) this.setHint(hint, true);
+    else if (this._actionHint) this.setHint('');
 
     /* --- 시야 가장자리에 무언가 서 있는 순간 --- */
     this.figSpawnT -= dt;
@@ -521,10 +545,10 @@ const Game = {
       '고 양 이 를  찾 아 서<br><span style="font-size:.45em;letter-spacing:.9em;opacity:.6">끝</span>';
     this.el.stageTitle.classList.add('on');
     clearTimeout(this._stT);
-    setTimeout(() => this.setHint('R — 다시 시작'), 2600);
+    setTimeout(() => this.setHint(TouchPad.enabled ? 'E — 다시 시작' : 'R — 다시 시작'), 2600);
   },
 
-  updEnd() { if (Input.pressed('r')) location.reload(); },
+  updEnd() { if (Input.pressed('r', 'e')) location.reload(); },
 
   /* ---------------- 이동 / 충돌 ---------------- */
   moveAxis(P, dx, dy) {

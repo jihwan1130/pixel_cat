@@ -14,8 +14,10 @@ const R = {
   noise: null,
   NW: 256,
 
-  init(canvas) {
+  init(canvas, w, h) {
+    if (w) { this.W = w; this.H = h; }
     canvas.width = this.W; canvas.height = this.H;
+    this.lgrid = null;                 // 해상도가 바뀌면 광량 격자를 다시 만든다
     this.ctx = canvas.getContext('2d', { alpha: false });
     this.ctx.imageSmoothingEnabled = false;
     this.lum = new Float32Array(this.W * this.H);

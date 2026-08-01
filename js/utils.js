@@ -42,7 +42,23 @@ const Input = {
 
   held(...keys) { return keys.some(k => this.down[k]); },
   pressed(...keys) { return keys.some(k => this._pressed[k]); },
-  endFrame() { this._pressed = Object.create(null); this.anyPressed = false; }
+  endFrame() { this._pressed = Object.create(null); this.anyPressed = false; },
+
+  /* 키보드와 터치 스틱을 합친 이동 벡터.
+     x, y 는 방향(길이 1), m 은 속도 배율 — 터치는 민 정도만큼 천천히 걸을 수 있다. */
+  move() {
+    let dx = 0, dy = 0;
+    if (this.held('a', 'arrowleft'))  dx -= 1;
+    if (this.held('d', 'arrowright')) dx += 1;
+    if (this.held('w', 'arrowup'))    dy -= 1;
+    if (this.held('s', 'arrowdown'))  dy += 1;
+    if (dx || dy) {
+      const l = Math.hypot(dx, dy);
+      return { x: dx / l, y: dy / l, m: 1 };
+    }
+    if (TouchPad.vec.m > 0) return TouchPad.vec;
+    return { x: 0, y: 0, m: 0 };
+  }
 };
 
 /* 내레이션(타이프라이터) --------------------------------------------------- */

@@ -2,13 +2,17 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="theme-color" content="#000000">
 <title>고양이를 찾아서</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <div id="stage">
-    <canvas id="game" width="320" height="180"></canvas>
+    <canvas id="game"></canvas>
 
     <div id="overlay">
       <div id="stage-title"></div>
@@ -19,10 +23,28 @@
       <div id="title-screen">
         <h1>고양이를 찾아서</h1>
         <p class="sub">A Monochrome Maze</p>
-        <p class="blink">아무 키나 누르세요</p>
-        <p class="ctrl">이동 W A S D / ← ↑ → ↓ &nbsp;·&nbsp; 상호작용 E &nbsp;·&nbsp; 소리를 켜고 플레이하세요</p>
+        <p class="blink"><span class="k">아무 키나 누르세요</span><span class="t">화면을 누르세요</span></p>
+        <p class="ctrl">
+          <span class="k">이동 W A S D / ← ↑ → ↓ &nbsp;·&nbsp; 상호작용 E</span>
+          <span class="t">왼쪽을 끌어 이동 &nbsp;·&nbsp; 오른쪽을 눌러 상호작용</span>
+          &nbsp;·&nbsp; 소리를 켜고 플레이하세요
+        </p>
       </div>
     </div>
+  </div>
+
+  <!-- 휴대폰 조작 : 터치 기기에서만 켜진다 -->
+  <div id="touch" hidden>
+    <div id="stick-hint"></div>
+    <div id="stick"></div>
+    <div id="knob"></div>
+    <div id="btn-act">E</div>
+  </div>
+
+  <!-- 세로로 들고 있을 때 -->
+  <div id="rotate">
+    <div class="phone"></div>
+    <p>가로로 돌려 주세요</p>
   </div>
 
   <script src="js/utils.js"></script>
@@ -32,6 +54,7 @@
   <script src="js/tiles.js"></script>
   <script src="js/props.js"></script>
   <script src="js/levels.js"></script>
+  <script src="js/touch.js"></script>
   <script src="js/game.js"></script>
 </body>
 </html>
