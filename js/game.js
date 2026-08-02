@@ -262,7 +262,7 @@ const Game = {
     this.torchOutT = 0; this.hiding = null;
     this.dropFigure(false);
     // 정해진 좌표에 서 있는 것들. 다가가면 깨어난다.
-    this.sentries = (m.sentries || []).map(s => ({ x: s.x, y: s.y }));
+    this.sentries = (m.sentries || []).map(s => ({ x: s.x, y: s.y, glitchSeed: Math.random() }));
     Narrator.clearFlash();
 
     this.fade = 0;
@@ -586,8 +586,18 @@ const Game = {
       farT: 0, lostT: 0, hunt: null, prowlT: 0, prowlTo: null, missT: 0,
       flow: null, flowT: 0, stepT: 0, stuckT: 0, arriveT: 0,
       lastSeen: { x: px, y: py },
-      trail: { x: px, y: py }
+      trail: { x: px, y: py },
+      glitchSeed: Math.random()  // 얼굴 지지직 프레임의 위상. 개체마다 어긋나야 한다.
     };
+  },
+
+  /* 얼굴(눈·입) 프레임을 짧고 불규칙한 간격으로 건너뛰며 고른다 —
+     몸은 그대로 두고 이목구비만 아날로그 호러식으로 지지직거리게. */
+  figGlitchFrame(seed) {
+    const n = SPR.FIGURE_FRAMES.length;
+    const t = Math.floor(this.time * 9);
+    const h = Math.sin((t + seed * 97) * 12.9898) * 43758.5453;
+    return Math.floor((h - Math.floor(h)) * n) % n;
   },
 
   makeFigure(x, y, mode) {
@@ -1171,8 +1181,9 @@ const Game = {
       } else if (o.kind === 'figure') {
         const F = o.f;
         const fx = Math.round(F.x - cam.x), fy = Math.round(F.y - cam.y);
-        R.outline(SPR.FIGURE, fx - 8, fy - 34);
-        R.sprite(SPR.FIGURE, fx - 8, fy - 34);
+        const frame = SPR.FIGURE_FRAMES[this.figGlitchFrame(F.glitchSeed || 0)];
+        R.outline(frame, fx - 8, fy - 34);
+        R.sprite(frame, fx - 8, fy - 34);
         // 빛을 주지 않는다. 자기 주변을 밝히면 위치를 알려주는 표시등이 된다 —
         // 손전등이 우연히 닿았을 때 비로소 거기 있었다는 것을 알아야 한다.
       } else if (o.kind === 'cat') {
