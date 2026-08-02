@@ -1171,8 +1171,8 @@ const Game = {
       } else if (o.kind === 'figure') {
         const F = o.f;
         const fx = Math.round(F.x - cam.x), fy = Math.round(F.y - cam.y);
-        R.outline(SPR.FIGURE, fx - 6, fy - 31);
-        R.sprite(SPR.FIGURE, fx - 6, fy - 31);
+        R.outline(SPR.FIGURE, fx - 8, fy - 34);
+        R.sprite(SPR.FIGURE, fx - 8, fy - 34);
         // 빛을 주지 않는다. 자기 주변을 밝히면 위치를 알려주는 표시등이 된다 —
         // 손전등이 우연히 닿았을 때 비로소 거기 있었다는 것을 알아야 한다.
       } else if (o.kind === 'cat') {
