@@ -21,13 +21,28 @@
       <div id="narration"></div>
 
       <div id="title-screen">
-        <h1>고양이를 찾아서</h1>
-        <p class="sub">A Monochrome Maze</p>
-        <p class="blink"><span class="k">아무 키나 누르세요</span><span class="t">화면을 누르세요</span></p>
+        <h1 data-i18n="game.title"></h1>
+        <p class="sub" data-i18n="game.sub"></p>
+
+        <!-- 언어 선택 : 눌러서 고르거나 ← → 로 넘긴다 -->
+        <div id="lang">
+          <span class="label" data-i18n="title.lang"></span>
+          <span class="opts">
+            <button type="button" data-lang="ko">한국어</button>
+            <span class="sep">/</span>
+            <button type="button" data-lang="en">ENGLISH</button>
+          </span>
+        </div>
+
+        <p class="blink">
+          <span class="k" data-i18n="title.startKey"></span>
+          <span class="t" data-i18n="title.startTouch"></span>
+        </p>
         <p class="ctrl">
-          <span class="k">이동 W A S D / ← ↑ → ↓ &nbsp;·&nbsp; 상호작용 E</span>
-          <span class="t">왼쪽을 끌어 이동 &nbsp;·&nbsp; 오른쪽을 눌러 상호작용</span>
-          &nbsp;·&nbsp; 소리를 켜고 플레이하세요
+          <span class="k" data-i18n="title.ctrlKeys"></span>
+          <span class="t" data-i18n="title.ctrlTouch"></span>
+          &nbsp;·&nbsp;
+          <span data-i18n="title.sound"></span>
         </p>
       </div>
     </div>
@@ -44,9 +59,10 @@
   <!-- 세로로 들고 있을 때 -->
   <div id="rotate">
     <div class="phone"></div>
-    <p>가로로 돌려 주세요</p>
+    <p data-i18n="rotate"></p>
   </div>
 
+  <script src="js/i18n.js"></script>
   <script src="js/utils.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/sprites.js"></script>

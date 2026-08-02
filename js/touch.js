@@ -51,6 +51,10 @@ const TouchPad = {
   onStart(e) {
     e.preventDefault();
 
+    // 이 레이어가 화면을 통째로 덮고 있어서 타이틀 화면의 언어 버튼까지 가린다.
+    // 버튼 위를 눌렀다면 여기서 먹고, 시작으로는 넘기지 않는다.
+    if (I18N.hitTest(e.changedTouches)) return;
+
     // 오디오는 반드시 제스처 핸들러 안에서 열어야 iOS 가 허용한다.
     // rAF 안에서 여는 경우 컨텍스트가 suspended 로 남는다.
     // (window.Snd 로 접근하면 안 된다 — const 선언은 window 프로퍼티를 만들지 않는다)

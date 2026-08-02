@@ -178,6 +178,62 @@ body.touch .t { display: inline; }
   color: #6a6a6a;
 }
 
+/* ---- 언어 선택 ---- */
+#lang {
+  margin-top: 1.4em;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .7em;
+  pointer-events: auto;      /* #overlay 는 통과시키지만 여기만 받는다 */
+  z-index: 30;
+}
+#lang .label {
+  font-size: clamp(8px, 1vw, 12px);
+  letter-spacing: .34em;
+  text-indent: .34em;
+  color: #5c5c5c;
+}
+#lang .opts {
+  display: flex;
+  align-items: center;
+  gap: .9em;
+}
+#lang .sep { color: #3d3d3d; }
+#lang button {
+  appearance: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  padding: .25em .2em;
+  font-size: clamp(11px, 1.5vw, 19px);
+  letter-spacing: .2em;
+  text-indent: .2em;
+  color: #575757;
+  border-bottom: 1px solid transparent;
+  transition: color .25s ease, border-color .25s ease, text-shadow .25s ease;
+}
+#lang button:hover { color: #a8a8a8; }
+#lang button.on {
+  color: #fff;
+  border-bottom-color: rgba(255,255,255,.5);
+  text-shadow: 0 0 16px rgba(255,255,255,.35);
+}
+
+/* 영문은 같은 뜻에 글자가 두 배쯤 든다 — 자간과 크기를 줄여 한 줄에 담는다 */
+body.lang-en #title-screen h1 {
+  font-size: clamp(15px, 3.1vw, 44px);
+  letter-spacing: .26em;
+  text-indent: .26em;
+}
+body.lang-en #stage-title {
+  font-size: clamp(12px, 2.1vw, 30px);
+  letter-spacing: .34em;
+  text-indent: .34em;
+}
+body.lang-en #title-screen .ctrl { letter-spacing: .04em; }
+
 @keyframes blink {
   0%, 45%  { opacity: .95; }
   55%, 100%{ opacity: .12; }

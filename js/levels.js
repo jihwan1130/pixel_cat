@@ -61,11 +61,7 @@ const LEVEL_DEF = {
   alley: {
     theme: 'alley', W: 46, H: 32, fill: TT.WALL, windows: true,
     mins: { trace: 2, dread: 2 },        // 절제. 대부분 비어 있다는 것을 먼저 학습시킨다
-    title: '하나 · 골 목',
-    lines: [
-      '고양이가 사라진 골목.',
-      '창문은 전부 꺼져 있고, 어느 집도 이쪽을 내다보지 않는다.'
-    ],
+    /* 제목과 도입 문장은 i18n.js 에 있다 — 키는 level.<이름>.title / .lines */
     ops: [
       // 블록을 둘러싼 길
       ['r', 1, 1, 44, 3, TT.FLOOR],
@@ -120,11 +116,6 @@ const LEVEL_DEF = {
   house: {
     theme: 'house', W: 46, H: 30, fill: TT.WALL, windows: true,
     mins: { trace: 3, dread: 3 },
-    title: '둘 · 낡 은  건 물',
-    lines: [
-      '안쪽은 바깥보다 더 조용했다.',
-      '누가 살다 나간 자리에 가구만 그대로 남아 있다.'
-    ],
     lock: { need: 1, kind: 'key' },
     keyProps: [[42, 18]],                  // H 창고 방 옷장 안
     ops: [
@@ -202,11 +193,6 @@ const LEVEL_DEF = {
   cellar: {
     theme: 'cellar', W: 50, H: 30, fill: TT.WALL, windows: false,
     mins: { trace: 3, dread: 4 },        // 마지막 구간이 가장 조인다
-    title: '셋 · 지 하',
-    lines: [
-      '계단은 아래로만 이어졌다.',
-      '천장의 전구가 일정한 간격으로 하나씩 켜져 있다.'
-    ],
     lock: { need: 3, kind: 'shard' },
     keyProps: [[12, 4], [23, 25], [37, 18]],   // 챔버1 / 보일러실 / 마지막 방
     ops: [
@@ -283,31 +269,13 @@ const OUTCOME_W = [
   ['dread', 15]
 ];
 
-const FLAVOR = {
-  empty: [
-    '빈 옷걸이만 남아 있다.',
-    '먼지가 두껍게 앉았다. 오래 열리지 않은 것 같다.',
-    '아무것도 없다. 아무것도 없다는 것이 조금 이상하다.',
-    '누군가 이미 비워 갔다.',
-    '바닥에 신문지 몇 장. 날짜는 읽히지 않는다.'
-  ],
-  trace: [
-    '고양이 털 몇 올. 아직 따뜻한 것 같다.',
-    '작은 발자국이 안쪽으로 어지럽게 찍혀 있다.',
-    '목줄에서 떨어진 고리 하나가 굴러 나왔다.',
-    '여기서 한참 웅크리고 있었던 자국이 남아 있다.'
-  ],
-  noise: [
-    '안쪽에서 무언가 무너지는 소리가 났다.',
-    '무언가 빠르게 지나갔다. 쥐였을 것이다.',
-    '닫는 순간, 안에서 한 번 더 소리가 났다.',
-    '뒤쪽에서 뭔가가 넘어졌다. 돌아보니 아무것도 없다.'
-  ]
-};
+/* 수색 결과 문장은 i18n.js 의 flavor.<종류> 에 있다.
+   위치로 고정되는 것은 '몇 번째 문장인가' 뿐이라, 언어가 바뀌어도 같은 자리에서
+   같은 뜻의 문장이 나온다. */
 
 const Levels = {
   T: 16,
-  SEARCHABLE, CONTAINER, OPENABLE, FLAVOR,
+  SEARCHABLE, CONTAINER, OPENABLE,
 
   build(name) {
     const D = LEVEL_DEF[name];
@@ -327,7 +295,9 @@ const Levels = {
       name, theme: D.theme, grid, W, H, T: this.T,
       blocked: new Uint8Array(W * H),
       props: [],
-      title: D.title, lines: D.lines
+      // 공원(도입)에는 제목도 도입 문장도 없다
+      title: I18N.has('level.' + name + '.title') ? TXT('level.' + name + '.title') : '',
+      lines: TXTA('level.' + name + '.lines')
     };
 
     /* 건물 입면에 창문을 규칙적으로 낸다 (아래가 바닥이고 위가 벽인 곳) */
@@ -449,8 +419,8 @@ const Levels = {
   },
 
   flavor(kind, idx) {
-    const pool = FLAVOR[kind];
-    return pool ? pool[idx % pool.length] : '';
+    const pool = TXTA('flavor.' + kind);
+    return pool.length ? pool[idx % pool.length] : '';
   },
 
   /* 철문을 연다. 격자가 바뀌므로 이후의 길찾기·충돌이 전부 따라온다. */

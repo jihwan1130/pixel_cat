@@ -57,6 +57,7 @@ const Game = {
 
   /* --------------------------------------------------------------- */
   init() {
+    I18N.init();
     TouchPad.init();
     // 휴대폰에서는 내부 해상도를 한 단계 낮춘다.
     // 픽셀당 비용이 큰 렌더러라 화면 크기가 그대로 프레임 시간이 된다.
@@ -160,7 +161,11 @@ const Game = {
 
   /* ---------------- TITLE ---------------- */
   updTitle() {
+    // ← → (또는 A D) 는 언어를 넘기는 키다. 시작으로 치지 않는다.
+    if (I18N.cycleByKey()) return;
     if (!Input.anyPressed) return;
+    // 판이 시작되면 언어를 잠근다 — 도중에 바뀌면 내레이션이 중간에 갈아 끼워진다
+    I18N.locked = true;
     Snd.init();
     Snd.startAmbience();
     this.el.title.classList.add('off');
@@ -184,23 +189,23 @@ const Game = {
 
     this.fade = 0;
     this.fadeTo(1, 2.8);
-    this.setHint(TouchPad.enabled ? 'E — 건너뛰기' : 'SPACE — 건너뛰기');
+    this.setHint(TXT(TouchPad.enabled ? 'hint.skipTouch' : 'hint.skipKey'));
 
     const P = this.player, C = this.cat;
     this.setTimeline([
       { at: 0.6,  fn: () => { P.speed = 28; C.speed = 28; } },
-      { at: 1.8,  fn: () => Narrator.say(['밤 산책.']) },
-      { at: 4.8,  fn: () => Narrator.say(['고양이는 언제나 나보다 세 걸음 앞서 걷는다.']) },
+      { at: 1.8,  fn: () => Narrator.say([TXT('intro.1')]) },
+      { at: 4.8,  fn: () => Narrator.say([TXT('intro.2')]) },
       { at: 8.4,  fn: () => { C.speed = 0; Snd.bell(1.0); } },
       { at: 9.3,  fn: () => { P.speed = 0; } },
-      { at: 9.8,  fn: () => Narrator.say(['어딘가 먼 곳에서 종이 울렸다.']) },
+      { at: 9.8,  fn: () => Narrator.say([TXT('intro.3')]) },
       { at: 12.4, fn: () => { C.face = -1; Snd.meow(0.1, 0.9); } },
-      { at: 13.4, fn: () => Narrator.say(['고양이가 귀를 세웠다.']) },
+      { at: 13.4, fn: () => Narrator.say([TXT('intro.4')]) },
       { at: 16.0, fn: () => { C.run = true; C.face = 1; C.speed = 132; Snd.meow(0.5, 0.7); } },
-      { at: 16.8, fn: () => Narrator.say(['…그리고 가로등이 닿지 않는 곳으로 뛰어들었다.']) },
+      { at: 16.8, fn: () => Narrator.say([TXT('intro.5')]) },
       { at: 19.4, fn: () => { C.alive = false; Snd.bell(0.7); } },
       { at: 20.2, fn: () => { P.speed = 54; } },
-      { at: 21.4, fn: () => { P.speed = 0; Narrator.say(['나는 빈 목줄만 쥔 채 서 있었다.']); } },
+      { at: 21.4, fn: () => { P.speed = 0; Narrator.say([TXT('intro.6')]); } },
       { at: 24.6, fn: () => { this.fadeTo(0, 2.4); Narrator.clear(); this.setHint(''); } },
       { at: 27.4, fn: () => this.startStage(0) }
     ]);
@@ -276,19 +281,13 @@ const Game = {
     // 잠긴 곳이 있는 판은 무엇을 찾아야 하는지 한 줄로 알려 준다.
     // 열쇠가 있다는 사실 자체를 숨기면 탐색이 아니라 헤매기가 된다.
     const lines = m.lines.slice();
-    if (m.lock) {
-      lines.push(m.lock.kind === 'key'
-        ? '아래로 내려가는 문은 잠겨 있었다. 열쇠는 이 안 어딘가에 있을 것이다.'
-        : '길을 막은 철문에는 자물쇠가 세 개. 조각을 셋 다 찾아야 한다.');
-    }
+    if (m.lock) lines.push(TXT(m.lock.kind === 'key' ? 'lock.key' : 'lock.shard'));
 
     setTimeout(() => {
       if (this.state !== 'play') return;
       Narrator.say(lines, () => {
         this.locked = false;
-        this.setHint(TouchPad.enabled
-          ? '왼쪽을 끌어 이동   ·   E — 뒤지기 / 숨기'
-          : 'W A S D — 이동   ·   E — 뒤지기 / 숨기');
+        this.setHint(TXT(TouchPad.enabled ? 'hint.moveTouch' : 'hint.moveKeys'));
         setTimeout(() => this.setHint(''), 4500);
       });
     }, 1700);
@@ -338,7 +337,7 @@ const Game = {
     if (this.hiding) {
       // 들킨 뒤에는 나올 수 없다. 문이 열릴 때까지 안에서 듣고 있어야 한다.
       if (!(this.figure && this.figure.hunt)) {
-        hint = 'E — 나온다';
+        hint = TXT('hint.exitHide');
         if (Input.pressed('e')) { this.exitHide(); return; }
       }
     } else if (!this.locked && this.searchT <= 0) {
@@ -349,24 +348,26 @@ const Game = {
 
       if (gd < 36) {
         if (short > 0) {
-          hint = `철문 — 자물쇠 ${L.have} / ${L.need}`;
+          hint = TXT('hint.gateLocked', { have: L.have, need: L.need });
           if (Input.pressed('e')) {
             Snd.rattle();
-            Narrator.flash(`자물쇠가 꿈쩍도 하지 않는다. 조각이 ${short}개 더 필요하다.`, { bad: true, dur: 3.4 });
+            Narrator.flash(
+              TXT('gate.rattle', { n: short, shard: I18N.plural(short, 'shard', 'shards') }),
+              { bad: true, dur: 3.4 });
           }
         } else {
-          hint = 'E — 철문을 연다';
+          hint = TXT('hint.gateOpen');
           if (Input.pressed('e')) { this.openGate(); return; }
         }
       } else if (!G.used && d < 30) {
         if (short > 0 && !gate) {
-          hint = '잠겨 있다 — 열쇠가 없다';
+          hint = TXT('hint.doorLocked');
           if (Input.pressed('e')) {
             Snd.rattle();
-            Narrator.flash('손잡이가 돌아가지 않는다. 열쇠는 이 집 어딘가에 있다.', { bad: true, dur: 3.4 });
+            Narrator.flash(TXT('door.rattle'), { bad: true, dur: 3.4 });
           }
         } else {
-          hint = G.type === 'door' ? 'E — 문을 연다' : 'E — 고양이를 부른다';
+          hint = TXT(G.type === 'door' ? 'hint.door' : 'hint.cat');
           if (Input.pressed('e')) {
             G.used = true;
             this.setHint('');
@@ -382,7 +383,7 @@ const Game = {
           hint = 'E — ' + this.searchVerb(pr.n);
           if (Input.pressed('e')) { this.beginSearch(pr); hint = ''; }
         } else if (box) {
-          hint = chased ? 'E — 숨는다' : 'E — 안에 숨는다';
+          hint = TXT(chased ? 'hint.hideNow' : 'hint.hide');
           if (Input.pressed('e')) { this.tryHide(box); return; }
         }
       }
@@ -423,7 +424,7 @@ const Game = {
     if (!Levels.openGate(this.map)) return;
     this.setHint('');
     Snd.gateOpen();
-    Narrator.flash('빗장이 풀리고, 철문이 안쪽으로 밀려났다.', { dur: 4.0 });
+    Narrator.flash(TXT('gate.opened'), { dur: 4.0 });
     this.dreadBy(1);
     // 쇠가 긁히는 소리는 멀리 간다. 정해진 자리에 하나 선다.
     this.spawnAt(this.map.gateSpawn, this.defaultMode());
@@ -443,13 +444,13 @@ const Game = {
 
   searchVerb(n) {
     switch (n) {
-      case 'cabinet': return '옷장을 연다';
-      case 'bed':     return '침대 밑을 본다';
-      case 'shelf':   return '선반을 뒤진다';
-      case 'bin':     return '쓰레기통을 뒤진다';
+      case 'cabinet': return TXT('verb.cabinet');
+      case 'bed':     return TXT('verb.bed');
+      case 'shelf':   return TXT('verb.shelf');
+      case 'bin':     return TXT('verb.bin');
       case 'drum':
-      case 'barrel':  return '드럼통을 연다';
-      default:        return '상자를 연다';
+      case 'barrel':  return TXT('verb.drum');
+      default:        return TXT('verb.crate');
     }
   },
 
@@ -512,11 +513,11 @@ const Game = {
     this.dreadBy(-0.5);
     Snd.pickup();
     if (!L || L.kind === 'key')
-      Narrator.flash('작은 열쇠 하나. 아래로 내려가는 문의 것이다.', { dur: 4.4 });
+      Narrator.flash(TXT('key.take'), { dur: 4.4 });
     else if (L.have >= L.need)
-      Narrator.flash(`마지막 조각. (${L.have} / ${L.need})  이제 철문을 열 수 있다.`, { dur: 4.8 });
+      Narrator.flash(TXT('key.last', { have: L.have, need: L.need }), { dur: 4.8 });
     else
-      Narrator.flash(`녹슨 열쇠 조각 하나. (${L.have} / ${L.need})`, { dur: 4.4 });
+      Narrator.flash(TXT('key.shard', { have: L.have, need: L.need }), { dur: 4.4 });
   },
 
   dreadBy(v) {
@@ -531,7 +532,7 @@ const Game = {
     const kinds = ['figure', 'torch', 'bell', 'deep', 'behind'];
     switch (kinds[(pr.tx * 7 + pr.ty * 13) % kinds.length]) {
       case 'figure': {
-        Narrator.flash('…안에 누군가 서 있었다.', { bad: true, dur: 4.4 });
+        Narrator.flash(TXT('dread.figure'), { bad: true, dur: 4.4 });
         Snd.sting();
         const F = this.figure = this.newFigure(pr.tx * T + T / 2, pr.ty * T + T - 2, 'inside');
         F.t = this.stageIdx === 0 ? 0.6 : 1.1;
@@ -539,21 +540,21 @@ const Game = {
         break;
       }
       case 'torch':
-        Narrator.flash('여는 순간 손전등이 꺼졌다.', { bad: true, dur: 4.4 });
+        Narrator.flash(TXT('dread.torch'), { bad: true, dur: 4.4 });
         Snd.thump(0, 0.7);
         this.torchOutT = 2.1;
         break;
       case 'bell':
-        Narrator.flash('종소리가 바로 귀 옆에서 울렸다.', { bad: true, dur: 4.4 });
+        Narrator.flash(TXT('dread.bell'), { bad: true, dur: 4.4 });
         Snd.nearBell();
         break;
       case 'deep':
-        Narrator.flash('안쪽이, 이 물건의 깊이보다 훨씬 깊다.', { bad: true, dur: 4.4 });
+        Narrator.flash(TXT('dread.deep'), { bad: true, dur: 4.4 });
         Snd.sting();
         break;
       default:
         // 소리만 난다. 실제로 무언가 서는 것은 triggers 에 적힌 자리뿐이다.
-        Narrator.flash('뒤에서 문이 닫히는 소리가 났다. 방금 지나온 곳이다.', { bad: true, dur: 4.8 });
+        Narrator.flash(TXT('dread.behind'), { bad: true, dur: 4.8 });
         Snd.creak(0.7);
     }
   },
@@ -692,7 +693,7 @@ const Game = {
       const mode = this.defaultMode();
       this.makeFigure(s.x, s.y, mode);
       if (mode === 'chase')
-        Narrator.flash('…서 있던 것이, 이쪽으로 고개를 돌렸다.', { bad: true, dur: 3.8 });
+        Narrator.flash(TXT('fig.wake'), { bad: true, dur: 3.8 });
       return;
     }
   },
@@ -708,7 +709,7 @@ const Game = {
     F.lastSeen = { x: px, y: py };
     F.trail = { x: px, y: py };
     Snd.startChase();
-    Narrator.flash('그것이 상자 밖으로 발을 내디뎠다.', { bad: true, dur: 4.0 });
+    Narrator.flash(TXT('fig.outOfBox'), { bad: true, dur: 4.0 });
   },
 
   updFigure(dt) {
@@ -825,7 +826,7 @@ const Game = {
     if (U.dist(spot.x, spot.y, F.x, F.y) < this.NEAR_MISS_D && F.missT <= 0) {
       F.missT = 4.5;
       Snd.breath();
-      Narrator.flash('발소리가 문 바로 앞에서 멈췄다.', { bad: true, dur: 3.0 });
+      Narrator.flash(TXT('fig.atDoor'), { bad: true, dur: 3.0 });
     }
 
     // 마지막으로 제대로 본 자리 언저리를 돌아다닌다
@@ -952,11 +953,11 @@ const Game = {
       const d = U.dist(this.player.x + 4, this.player.y + 4, F.x, F.y);
       if (d < this.SEEN_D) {
         // 보고 있는 앞에서 들어갔다 — 서두르지 않는다. 어디로 들어갔는지 알고 있으니까.
-        this.spotted(F, '…들어가는 것을, 봤다.');
+        this.spotted(F, TXT('fig.sawMe'));
         return;
       }
     }
-    Narrator.flash('숨을 죽였다.', { dur: 2.8 });
+    Narrator.flash(TXT('hide.enter'), { dur: 2.8 });
   },
 
   exitHide() {
@@ -996,14 +997,12 @@ const Game = {
     this.figure.t = 1e9;
     this.chaseProx = 0;
 
-    const line = found
-      ? '문이, 밖에서 열렸다.'
-      : '어깨에 손이 닿았다.';
+    const line = TXT(found ? 'death.found' : 'death.caught');
 
     this.setTimeline([
       { at: 0.3, fn: () => Narrator.say([line]) },
       { at: 3.0, fn: () => { this.fadeTo(0, 2.0); } },
-      { at: 5.4, fn: () => Narrator.say(['다시, 골목이었다.'], () => this.restartRun()) }
+      { at: 5.4, fn: () => Narrator.say([TXT('death.again')], () => this.restartRun()) }
     ]);
   },
 
@@ -1058,7 +1057,7 @@ const Game = {
     };
     setTimeout(() => {
       if (this.state !== 'play' || this.stageIdx !== from) return;
-      Narrator.say(['문 너머에서, 아주 작게 울음소리가 났다.'], go);
+      Narrator.say([TXT('door.through')], go);
     }, 2000);
   },
 
@@ -1073,18 +1072,16 @@ const Game = {
     const C = this.cat, P = this.player;
 
     // 흔적을 많이 찾아왔다면 한 줄이 더 붙는다
-    const traceLine = this.traces >= 3
-      ? ['오는 길에 남아 있던 자국들이, 전부 이쪽을 향하고 있었다.']
-      : [];
+    const traceLine = this.traces >= 3 ? [TXT('end.traces')] : [];
 
     this.setTimeline([
       { at: 0.2,  fn: () => Snd.meow(0, 1) },
-      { at: 0.8,  fn: () => Narrator.say(['…찾았다.']) },
-      { at: 3.4,  fn: () => Narrator.say(['고양이는 처음부터 그 자리에 앉아 있었던 것처럼 보였다.', ...traceLine]) },
+      { at: 0.8,  fn: () => Narrator.say([TXT('end.1')]) },
+      { at: 3.4,  fn: () => Narrator.say([TXT('end.2'), ...traceLine]) },
       { at: 7.0,  fn: () => { P.walkTo = { x: C.x - 18, y: C.y - 4 }; } },
-      { at: 9.2,  fn: () => { Snd.stopBells(); Snd.resolve(); Narrator.say(['품에 안자, 종소리가 멎었다.']); } },
-      { at: 12.6, fn: () => { C.alive = false; Snd.setAmbience(0.45, 4); Narrator.say(['우리는 왔던 길을 되짚어 걸었다.']); } },
-      { at: 16.0, fn: () => { Snd.creak(0.55); Narrator.say(['뒤에서, 문이 하나 조용히 닫혔다.']); } },
+      { at: 9.2,  fn: () => { Snd.stopBells(); Snd.resolve(); Narrator.say([TXT('end.3')]); } },
+      { at: 12.6, fn: () => { C.alive = false; Snd.setAmbience(0.45, 4); Narrator.say([TXT('end.4')]); } },
+      { at: 16.0, fn: () => { Snd.creak(0.55); Narrator.say([TXT('end.5')]); } },
       { at: 19.5, fn: () => { this.fadeTo(0, 3.0); Snd.setAmbience(0, 4); } },
       { at: 23.0, fn: () => this.showEnd() }
     ]);
@@ -1114,10 +1111,11 @@ const Game = {
     this.state = 'end';
     Narrator.clear();
     this.el.stageTitle.innerHTML =
-      '고 양 이 를  찾 아 서<br><span style="font-size:.45em;letter-spacing:.9em;opacity:.6">끝</span>';
+      TXT('game.titleSpaced') +
+      '<br><span style="font-size:.45em;letter-spacing:.9em;opacity:.6">' + TXT('game.end') + '</span>';
     this.el.stageTitle.classList.add('on');
     clearTimeout(this._stT);
-    setTimeout(() => this.setHint(TouchPad.enabled ? 'E — 다시 시작' : 'R — 다시 시작'), 2600);
+    setTimeout(() => this.setHint(TXT(TouchPad.enabled ? 'hint.restartTouch' : 'hint.restartKey')), 2600);
   },
 
   updEnd() { if (Input.pressed('r', 'e')) location.reload(); },
