@@ -100,6 +100,61 @@ const R = {
     }
   },
 
+  /* 스프라이트를 줄 단위로 어긋뜨려 그린다.
+     rows[i] = { sy, dx } : 화면 i 번째 줄에 원본 sy 줄을 dx 만큼 밀어 그린다.
+     원본보다 줄 수가 많아도 되므로 세로로 늘리는 것도 이걸로 한다.
+
+     둘레 파기까지 여기서 한 번에 한다. outline() 을 따로 부르면 둘레와 몸이
+     서로 다른 줄 배열로 어긋나 형태가 두 겹으로 번져 보인다 — 반드시 같은
+     rows 로 두 번 훑어야 한다. */
+  spriteRows(data, x, y, rows, mul = 1) {
+    const w = data[0].length, S = this.SHADE, n = rows.length;
+
+    for (let i = 0; i < n; i++) {
+      const r = rows[i], row = data[r.sy];
+      if (!row) continue;
+      const py = y + i, ox0 = x + r.dx;
+      for (let sx = 0; sx < w; sx++) {
+        if (row[sx] === '.') continue;
+        for (let oy = -1; oy <= 1; oy++)
+          for (let ox = -1; ox <= 1; ox++) this.zero(ox0 + sx + ox, py + oy);
+      }
+    }
+
+    for (let i = 0; i < n; i++) {
+      const r = rows[i], row = data[r.sy];
+      if (!row) continue;
+      const py = y + i, ox0 = x + r.dx;
+      for (let sx = 0; sx < w; sx++) {
+        const c = row[sx];
+        if (c === '.') continue;
+        const v = S[c];
+        if (v === undefined) continue;
+        this.px(ox0 + sx, py, v * mul);
+      }
+    }
+  },
+
+  /* 둘레의 빛을 먹는다 — 그것이 선 자리는 오히려 어두워진다.
+     광원을 주면 자기 위치를 알리는 표시등이 되므로 반대로 눌러 놓는다.
+     lum 을 직접 깎으므로 present() 의 광원 곱셈을 거쳐도 어둠이 남는다. */
+  shadowBlob(cx, cy, r, k = 0.5) {
+    if (r <= 0) return;
+    const x0 = Math.max(0, (cx - r) | 0), x1 = Math.min(this.W, (cx + r) | 0);
+    const y0 = Math.max(0, (cy - r) | 0), y1 = Math.min(this.H, (cy + r) | 0);
+    const rr = r * r;
+    for (let y = y0; y < y1; y++) {
+      const dy = (y - cy) * 1.15, row = y * this.W;
+      for (let x = x0; x < x1; x++) {
+        const dx = x - cx;
+        const q = (dx * dx + dy * dy) / rr;
+        if (q >= 1) continue;
+        const f = 1 - q;
+        this.lum[x + row] *= 1 - k * f * f;
+      }
+    }
+  },
+
   /* 실루엣 둘레 1px 를 검게 파낸다 — 밝은 벽 앞에서도 형태가 읽히도록 */
   outline(data, x, y, flip = false) {
     const h = data.length, w = data[0].length;

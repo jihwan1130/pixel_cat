@@ -33,6 +33,7 @@ const Game = {
   sentries: [],              // 처음부터 정해진 좌표에 서 있는 것들
   hiding: null,              // { pr, spot } — 상자·옷장 안에 들어가 있는 상태
   flick: 0,                  // 들킨 채 숨어 있을 때의 화면 명멸
+  shake: 0,                  // 0~1. 그것이 가까이서 발을 딛을 때만 오른다.
 
   SPEED: 62,
   STRIDE: 27,                // 이만큼 걸을 때마다 발소리 한 번.
@@ -143,6 +144,8 @@ const Game = {
   ================================================================= */
   update(dt) {
     this.time += dt;
+    // 발을 딛는 순간 튀어오르고 빠르게 잦아든다. 남아 있으면 지진이 된다.
+    if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 4.5);
     this.updateFade(dt);
     Narrator.update(dt);
     switch (this.state) {
@@ -259,7 +262,7 @@ const Game = {
 
     // 불안도와 흔적은 스테이지를 넘어 누적된다 — 아래로 갈수록 조여지도록
     this.searchT = 0; this.searchTarget = null;
-    this.torchOutT = 0; this.hiding = null;
+    this.torchOutT = 0; this.hiding = null; this.shake = 0;
     this.dropFigure(false);
     // 정해진 좌표에 서 있는 것들. 다가가면 깨어난다.
     this.sentries = (m.sentries || []).map(s => ({ x: s.x, y: s.y, glitchSeed: Math.random() }));
@@ -600,6 +603,69 @@ const Game = {
     return Math.floor((h - Math.floor(h)) * n) % n;
   },
 
+  /* 주인공까지의 근접도 0~1. 소리(Snd.figStep)와 같은 기준(300px)을 쓴다 —
+     귀로 듣는 거리와 눈으로 보는 일그러짐이 어긋나면 둘 다 가짜로 느껴진다. */
+  figProx(F) {
+    const P = this.player;
+    if (!P) return 0;
+    return U.clamp(1 - U.dist(P.x + 4, P.y + 4, F.x, F.y) / 300, 0, 1);
+  },
+
+  FIG_H: 32,
+  FIG_HEAD: 11,      // 0~10 이 머리와 목, 11 부터가 어깨
+
+  /* 그것을 그릴 줄 배열을 만든다.
+     스프라이트에 픽셀을 더 박는 대신 그릴 때 형태를 깨뜨린다 — 17x32 격자에
+     눈과 입을 더 그려 넣어 봐야 자글자글해지기만 하고 기괴해지지는 않는다.
+     실제로 한 번 그렇게 해 봤고 전부 걷어냈다. 격자를 늘리지 않고 무섭게
+     만드는 방법은 해상도가 아니라 형태를 흔드는 쪽에 있다.
+
+       · 가까울수록 키가 자란다. 실루엣이 커지는 것 자체가 위협이다.
+       · 머리는 통째로 어긋난다 — 목 위에서 미끄러진 것처럼. 머리까지 띠로
+         찢어 봤더니 눈이 뭉개져 그냥 잡음 덩어리가 됐다. 얼굴은 남기고
+         자리만 틀어야 '잘못 붙어 있다' 로 읽힌다.
+       · 몸은 줄을 세 개씩 묶어 가로로 민다. 줄마다 따로 흔들면 그저
+         지직거리는 잡음이고, 묶어야 테이프가 끊긴 것처럼 읽힌다.
+         몸통은 세로선이 길어 찢었을 때 잘 읽힌다 — 머리와 반대다. */
+  figWarpRows(F, prox) {
+    const H = this.FIG_H, HEAD = this.FIG_HEAD, BODY = H - HEAD;
+    const seed = F.glitchSeed || 0, t = this.time;
+
+    const grow = 1 + prox * 0.40;
+    // 머리가 제 박자로 조금 부풀었다 꺼진다. 크게 주면 눈이 세로로 늘어져
+    // 뭉개지므로 아주 얕게만.
+    const swell = 1 + prox * 0.20 * (0.5 + 0.5 * Math.sin(t * 2.3 + seed * 19.7));
+    const headOut = Math.max(1, Math.round(HEAD * grow * swell));
+    const bodyOut = Math.max(1, Math.round(BODY * grow));
+
+    const rows = [];
+    for (let i = 0; i < headOut; i++)
+      rows.push({ sy: Math.min(HEAD - 1, (i * HEAD / headOut) | 0), dx: 0 });
+    for (let i = 0; i < bodyOut; i++)
+      rows.push({ sy: HEAD + Math.min(BODY - 1, (i * BODY / bodyOut) | 0), dx: 0 });
+
+    // 머리는 몸보다 느리게(1/6초) 옮겨 붙는다. 몸이 지직거리는 동안
+    // 머리만 천천히 미끄러져야 둘이 따로 노는 것으로 보인다.
+    const hn = Math.sin(seed * 31.7 + Math.floor(t * 6) * 4.11) * 43758.5453;
+    const headDx = Math.round(((hn - Math.floor(hn)) - 0.5) * 2 * prox * 3.4);
+
+    // 어긋난 자리는 한 틱(1/12초) 동안 그대로 붙들려 있어야 한다.
+    // 매 프레임 새로 뽑으면 흔들리는 게 아니라 끓어오르는 것처럼 보인다.
+    const tick = Math.floor(t * 12);
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].sy < HEAD) { rows[i].dx = headDx; continue; }
+      const band = (i / 3) | 0;
+      const n = Math.sin(band * 7.13 + seed * 31.7 + tick * 2.39) * 43758.5453;
+      const r = n - Math.floor(n);
+      // 대부분의 띠는 제자리에 둔다. 가끔 크게 어긋나야 고장으로 읽힌다.
+      if (r > 0.20 && r < 0.80) continue;
+      const amp = 1.7 * (0.4 + prox * 1.6);
+      const mag = r < 0.5 ? (0.20 - r) / 0.20 : (r - 0.80) / 0.20;
+      rows[i].dx = Math.round((r < 0.5 ? -1 : 1) * amp * (0.5 + mag * 0.5));
+    }
+    return rows;
+  },
+
   makeFigure(x, y, mode) {
     this.figure = this.newFigure(x, y, mode);
     Snd.breath();
@@ -697,8 +763,13 @@ const Game = {
     F.stepT -= dt;
     if (F.stepT <= 0) {
       // 다가올 때는 걸음이 느려진다. 간격이 벌어지는 것 자체가 신호다.
-      F.stepT = F.hunt ? U.rand(0.95, 1.20) : U.rand(0.44, 0.54);
-      Snd.figStep(U.clamp((F.x - px) / 220, -1, 1), U.clamp(1.1 - dist / 300, 0.12, 1));
+      // 쫓을 때도 종종걸음이 아니다 — 무거운 것은 천천히 딛는다.
+      F.stepT = F.hunt ? U.rand(0.95, 1.20) : U.rand(0.50, 0.60);
+      // 거리·방향 계산은 전부 Snd 가 한다. 여기서는 좌표 차이만 넘긴다.
+      const near = Snd.figStep(F.x - px, F.y - py, !!F.hunt);
+      // 가까이서 딛으면 바닥이 울린다. 소리와 화면이 같은 순간에 흔들려야
+      // 무게로 읽힌다 — 따로 놀면 그냥 화면이 떨리는 것으로 보인다.
+      if (near > 0.4) this.shake = Math.max(this.shake, (near - 0.4) / 0.6);
     }
 
     if (this.hiding) { this.updHidden(F, dt, dist); return; }
@@ -1091,7 +1162,15 @@ const Game = {
     R.clear(0);
     if (this.state === 'title' || !this.map) { R.present([], 0, 0); return; }
 
-    const cam = { x: Math.round(this.cam.x), y: Math.round(this.cam.y) };
+    // 그것이 가까이서 발을 딛으면 바닥이 울린다. 제곱으로 깎아 딛는 순간만
+    // 튀고 곧바로 가라앉게 한다 — 길게 끌면 지진이지 발소리가 아니다.
+    let shx = 0, shy = 0;
+    if (this.shake > 0) {
+      const s = this.shake * this.shake * 2.6;
+      shx = Math.round(Math.sin(this.time * 97) * s);
+      shy = Math.round(Math.cos(this.time * 131) * s * 0.7);
+    }
+    const cam = { x: Math.round(this.cam.x) + shx, y: Math.round(this.cam.y) + shy };
     const map = this.map, T = map.T;
     const lights = [];
 
@@ -1181,11 +1260,25 @@ const Game = {
       } else if (o.kind === 'figure') {
         const F = o.f;
         const fx = Math.round(F.x - cam.x), fy = Math.round(F.y - cam.y);
+        const prox = this.figProx(F);
         const frame = SPR.FIGURE_FRAMES[this.figGlitchFrame(F.glitchSeed || 0)];
-        R.outline(frame, fx - 8, fy - 31);
-        R.sprite(frame, fx - 8, fy - 31);
+        const rows = this.figWarpRows(F, prox);
+        // 발은 바닥에 붙여 두고 위로 자란다
+        const top = fy - (rows.length - 1);
+
         // 빛을 주지 않는다. 자기 주변을 밝히면 위치를 알려주는 표시등이 된다 —
         // 손전등이 우연히 닿았을 때 비로소 거기 있었다는 것을 알아야 한다.
+        // 오히려 반대로, 선 자리의 빛을 먹는다. 손전등을 정면으로 비췄는데도
+        // 그 언저리만 어두워진다.
+        R.shadowBlob(fx, fy - 12, 20 + prox * 26, 0.30 + prox * 0.35);
+
+        // 잔상 — 한 박자 전의 자기 모습이 옆에 남는다.
+        // 가까울 때만. 멀리서까지 번지면 그냥 흐릿한 그림이 된다.
+        if (prox > 0.45) {
+          const g = ((this.time * 9) | 0) & 1;
+          R.spriteRows(frame, fx - 8 + (g ? 3 : -3), top + 1, rows, 0.30);
+        }
+        R.spriteRows(frame, fx - 8, top, rows);
       } else if (o.kind === 'cat') {
         const C = this.cat;
         const cx = Math.round(C.x - cam.x), cy = Math.round(C.y - cam.y);

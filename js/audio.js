@@ -24,7 +24,18 @@ const Snd = {
 
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.85;
-    this.master.connect(this.ctx.destination);
+
+    // 마지막 안전장치. 발소리는 저역만 네 겹이라 아주 가까울 때 합이 1 을 넘는데,
+    // destination 은 그냥 잘라 버린다 — 눌러서 받아낸다.
+    // threshold 를 -6dB 로 둬서 평소 앰비언스에는 걸리지 않고 피크만 잡는다.
+    this.limiter = this.ctx.createDynamicsCompressor();
+    this.limiter.threshold.value = -6;
+    this.limiter.knee.value = 6;
+    this.limiter.ratio.value = 12;
+    this.limiter.attack.value = 0.003;
+    this.limiter.release.value = 0.20;
+    this.master.connect(this.limiter);
+    this.limiter.connect(this.ctx.destination);
 
     // 큰 잔향 = 텅 빈 공간감
     this.conv = this.ctx.createConvolver();
@@ -724,41 +735,127 @@ const Snd = {
     if (this.started) this._scheduleBell(U.rand(3, 6));
   },
 
-  /* 그것의 발소리 — 주인공 발소리보다 무겁고 건조하다 */
-  figStep(pan, vol) {
-    if (!this.ctx) return;
+  /* 그것의 발소리 — 쿵.
+     거리와 방향 모델을 전부 여기서 계산한다. 부르는 쪽은 좌표 차이만 넘긴다.
+     예전에는 호출부가 미리 0..1 로 뭉갠 vol 을 넘겼는데, 그러면 거리에 따라
+     달라져야 하는 것(음색·잔향·팬)이 전부 한 숫자에 묶여 버린다.
+
+       · 크기   : 1/d 감쇠. 가까울수록 커지고 멀면 작아진다.
+       · 음색   : 멀면 로우패스로 눌려 웅웅거리고, 가까우면 뒤꿈치 긁히는
+                  소리까지 들린다. 벽 너머 소리와 바로 뒤 소리는 크기가 아니라
+                  음색이 다르다 — 이게 있어야 거리가 실제로 읽힌다.
+       · 공간   : 멀수록 잔향 비중이 올라간다. 가까우면 거의 건조해진다.
+       · 좌우   : dx/거리 — 실제 각도로 팬한다. 정면·뒤면 가운데, 옆이면 끝까지.
+       · 무게   : 저역 두 겹(28Hz 서브 + 110Hz 몸통)에 아주 가까우면 바닥
+                  울림이 하나 더 붙는다. 들리는 게 아니라 느껴지는 층이다.
+
+     좌우 발을 번갈아 조금씩 다르게 낸다. 똑같은 소리가 반복되면 발소리가
+     아니라 메트로놈으로 들린다.
+
+     반환값은 0..1 근접도 — 화면 흔들림처럼 같은 거리를 쓰는 연출이 재활용한다. */
+  FIG_REF: 70,     // 이 거리에서 원음 크기
+  FIG_MAX: 520,    // 이 너머는 들리지 않는다
+
+  figStep(dx, dy, creep = false) {
+    if (!this.ctx) return 0;
     const ctx = this.ctx, t = ctx.currentTime;
 
-    const ns = ctx.createBufferSource(); ns.buffer = this._noise(0.2);
+    const dist = Math.hypot(dx, dy);
+    // 아주 가까울 때 1/d 가 폭발하지 않도록 바닥을 두고, 먼 쪽은 부드럽게 0 으로.
+    let a = this.FIG_REF / Math.max(dist, 32);
+    a *= U.clamp(1 - dist / this.FIG_MAX, 0, 1);
+    a = U.clamp(a, 0, 1.35);
+    if (a < 0.02) return 0;
+
+    const near = U.clamp(1 - dist / 300, 0, 1);
+    // 숨은 자리로 다가올 때는 발을 끌듯 더 눌러 딛는다
+    const w = creep ? 0.82 : 1;
+    this._figFoot = !this._figFoot;
+    const heavy = this._figFoot;
+    const v = a * w * (heavy ? 1 : 0.84);
+
+    // --- 멀수록 눌린다. 이 필터가 거리감의 대부분을 만든다. ---
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 300 + near * near * 3400;
+    lp.Q.value = 0.7;
+
+    const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createGain();
+    if (pan.pan) pan.pan.value = U.clamp(dist > 1 ? dx / dist : 0, -1, 1) * 0.9;
+    lp.connect(pan);
+
+    // 멀면 잔향에 묻히고, 가까우면 귀 바로 옆에서 건조하게 난다
+    this._out(pan, 0.30 + near * 0.60, 0.30 + (1 - near) * 0.65);
+
+    // --- 서브 : 몸무게. 이게 '쿵' 의 뿌리다 ---
+    const sub = ctx.createOscillator(); sub.type = 'sine';
+    const f0 = (heavy ? 58 : 52) * U.rand(0.96, 1.04);
+    sub.frequency.setValueAtTime(f0, t);
+    sub.frequency.exponentialRampToValueAtTime(f0 * 0.46, t + 0.30);
+    const sg = ctx.createGain();
+    sg.gain.setValueAtTime(0.0001, t);
+    sg.gain.exponentialRampToValueAtTime(0.36 * v, t + 0.010);
+    sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.46);
+    // 서브는 필터를 거치지 않는다. 멀어도 저역은 벽을 통과해 남는다 —
+    // 멀리 있을 때 '웅' 하고 바닥으로만 들리는 게 이 층이다.
+    sub.connect(sg);
+    const sp = ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createGain();
+    if (sp.pan) sp.pan.value = U.clamp(dist > 1 ? dx / dist : 0, -1, 1) * 0.45;
+    sg.connect(sp);
+    this._out(sp, 0.55, 0.35);
+    sub.start(t); sub.stop(t + 0.52);
+
+    // --- 몸통 : 실제로 '쿵' 하고 때리는 층 ---
+    const bo = ctx.createOscillator(); bo.type = 'sine';
+    const b0 = (heavy ? 124 : 108) * U.rand(0.95, 1.05);
+    bo.frequency.setValueAtTime(b0, t);
+    bo.frequency.exponentialRampToValueAtTime(b0 * 0.40, t + 0.16);
+    const bg = ctx.createGain();
+    bg.gain.setValueAtTime(0.0001, t);
+    bg.gain.exponentialRampToValueAtTime(0.26 * v, t + 0.008);
+    bg.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+    bo.connect(bg); bg.connect(lp);
+    bo.start(t); bo.stop(t + 0.34);
+
+    // --- 바닥이 받아내는 저역 잡음 ---
+    const ns = ctx.createBufferSource(); ns.buffer = this._noise(0.26);
     const nf = ctx.createBiquadFilter();
-    nf.type = 'lowpass'; nf.frequency.value = 360; nf.Q.value = 2;
+    nf.type = 'lowpass'; nf.frequency.value = 240; nf.Q.value = 1.8;
     const ng = ctx.createGain();
     ng.gain.setValueAtTime(0.0001, t);
-    ng.gain.exponentialRampToValueAtTime(0.13 * vol, t + 0.01);
-    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+    ng.gain.exponentialRampToValueAtTime(0.20 * v, t + 0.010);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
+    ns.connect(nf); nf.connect(ng); ng.connect(lp);
+    ns.start(t);
 
-    const o = ctx.createOscillator(); o.type = 'sine';
-    o.frequency.setValueAtTime(88, t);
-    o.frequency.exponentialRampToValueAtTime(44, t + 0.13);
-    const og = ctx.createGain();
-    og.gain.setValueAtTime(0.0001, t);
-    og.gain.exponentialRampToValueAtTime(0.15 * vol, t + 0.008);
-    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
-
-    ns.connect(nf); nf.connect(ng); o.connect(og);
-
-    let tail;
-    if (ctx.createStereoPanner) {
-      const p = ctx.createStereoPanner();
-      p.pan.value = U.clamp(pan, -1, 1);
-      ng.connect(p); og.connect(p);
-      tail = p;
-    } else {
-      tail = ctx.createGain();
-      ng.connect(tail); og.connect(tail);
+    // --- 뒤꿈치가 바닥을 긁는 소리. 가까울 때만 들린다 ---
+    if (near > 0.12) {
+      const ak = ctx.createBufferSource(); ak.buffer = this._noise(0.07);
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass'; hp.frequency.value = 1100;
+      const ag = ctx.createGain();
+      ag.gain.setValueAtTime(0.085 * v * near, t);
+      ag.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+      ak.connect(hp); hp.connect(ag); ag.connect(lp);
+      ak.start(t);
     }
-    this._out(tail, 0.75, 0.3);
-    ns.start(t); o.start(t); o.stop(t + 0.3);
+
+    // --- 바로 옆까지 왔을 때만 붙는 바닥 울림. 들린다기보다 느껴진다 ---
+    if (near > 0.42) {
+      const r = ctx.createOscillator(); r.type = 'sine';
+      r.frequency.setValueAtTime(31, t);
+      r.frequency.exponentialRampToValueAtTime(21, t + 0.55);
+      const rg = ctx.createGain();
+      const k = (near - 0.42) / 0.58;
+      rg.gain.setValueAtTime(0.0001, t);
+      rg.gain.exponentialRampToValueAtTime(0.28 * k * a, t + 0.020);
+      rg.gain.exponentialRampToValueAtTime(0.0001, t + 0.70);
+      r.connect(rg);
+      this._out(rg, 0.85, 0.15);
+      r.start(t); r.stop(t + 0.75);
+    }
+
+    return near;
   },
 
   /* 불안도가 오르면 종이 잦아지고 드론이 조금 더 눌린다 */
