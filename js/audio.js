@@ -28,10 +28,13 @@ const Snd = {
     // 마지막 안전장치. 발소리는 저역만 네 겹이라 아주 가까울 때 합이 1 을 넘는데,
     // destination 은 그냥 잘라 버린다 — 눌러서 받아낸다.
     // threshold 를 -6dB 로 둬서 평소 앰비언스에는 걸리지 않고 피크만 잡는다.
+    // 세게 걸면 가까운 발소리만 눌려 거리에 따른 음량차가 뭉개진다.
+    // 실제로 재 보면 -6dB/12:1 에서 60~210px 폭이 2.6배까지 좁아지고,
+    // -4.5dB/10:1 에서 3.0배로 살아난다. 진짜 넘칠 때만 잡도록 얕게 건다.
     this.limiter = this.ctx.createDynamicsCompressor();
-    this.limiter.threshold.value = -6;
-    this.limiter.knee.value = 6;
-    this.limiter.ratio.value = 12;
+    this.limiter.threshold.value = -4.5;
+    this.limiter.knee.value = 4;
+    this.limiter.ratio.value = 10;
     this.limiter.attack.value = 0.003;
     this.limiter.release.value = 0.20;
     this.master.connect(this.limiter);
@@ -753,7 +756,7 @@ const Snd = {
      아니라 메트로놈으로 들린다.
 
      반환값은 0..1 근접도 — 화면 흔들림처럼 같은 거리를 쓰는 연출이 재활용한다. */
-  FIG_REF: 70,     // 이 거리에서 원음 크기
+  FIG_REF: 130,    // 이 거리에서 원음 크기
   FIG_MAX: 520,    // 이 너머는 들리지 않는다
 
   figStep(dx, dy, creep = false) {
@@ -761,10 +764,14 @@ const Snd = {
     const ctx = this.ctx, t = ctx.currentTime;
 
     const dist = Math.hypot(dx, dy);
-    // 아주 가까울 때 1/d 가 폭발하지 않도록 바닥을 두고, 먼 쪽은 부드럽게 0 으로.
-    let a = this.FIG_REF / Math.max(dist, 32);
-    a *= U.clamp(1 - dist / this.FIG_MAX, 0, 1);
-    a = U.clamp(a, 0, 1.35);
+    // 아주 가까울 때 1/d 가 폭발하지 않도록 바닥을 둔다.
+    // 꼬리는 마지막 200px 에서만 접는다 — 예전엔 (1 - d/520) 을 전 구간에
+    // 곱해서 1/d 와 이중으로 깎였고, 추격이 실제로 벌어지는 100~210px 에서
+    // 피크가 0.02~0.06 까지 내려가 추격 드론(0.09~0.24) 밑에 깔려 버렸다.
+    // 거리 감쇠는 멀쩡히 돌고 있었는데 아무것도 안 들렸던 게 이것 때문이다.
+    let a = this.FIG_REF / Math.max(dist, 42);
+    a *= U.clamp((this.FIG_MAX - dist) / 200, 0, 1);
+    a = U.clamp(a, 0, 2.4);
     if (a < 0.02) return 0;
 
     const near = U.clamp(1 - dist / 300, 0, 1);
@@ -785,7 +792,19 @@ const Snd = {
     lp.connect(pan);
 
     // 멀면 잔향에 묻히고, 가까우면 귀 바로 옆에서 건조하게 난다
-    this._out(pan, 0.30 + near * 0.60, 0.30 + (1 - near) * 0.65);
+    this._out(pan, 0.42 + near * 0.55, 0.30 + (1 - near) * 0.65);
+
+    // 딛는 순간 추격 드론을 잠깐 눌러 발소리가 그 위로 뚫고 나오게 한다.
+    // 둘 다 같은 저역대라 그냥 두면 발소리 피크(210px 에서 0.09)가 드론
+    // 피크(0.17) 밑에 깔려 아예 안 들린다 — 크기를 더 올리는 대신 자리를
+    // 비켜 주는 쪽이 맞다. 드론이 발소리마다 움찔하는 것으로도 들린다.
+    if (this.chaseOn && this.chaseGain) {
+      const g = this.chaseGain.gain;
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(g.value, t);
+      g.linearRampToValueAtTime(1 - 0.55 * Math.min(1, a), t + 0.02);
+      g.linearRampToValueAtTime(1, t + 0.34);
+    }
 
     // --- 서브 : 몸무게. 이게 '쿵' 의 뿌리다 ---
     const sub = ctx.createOscillator(); sub.type = 'sine';
@@ -794,7 +813,7 @@ const Snd = {
     sub.frequency.exponentialRampToValueAtTime(f0 * 0.46, t + 0.30);
     const sg = ctx.createGain();
     sg.gain.setValueAtTime(0.0001, t);
-    sg.gain.exponentialRampToValueAtTime(0.36 * v, t + 0.010);
+    sg.gain.exponentialRampToValueAtTime(0.50 * v, t + 0.010);
     sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.46);
     // 서브는 필터를 거치지 않는다. 멀어도 저역은 벽을 통과해 남는다 —
     // 멀리 있을 때 '웅' 하고 바닥으로만 들리는 게 이 층이다.
@@ -802,7 +821,7 @@ const Snd = {
     const sp = ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createGain();
     if (sp.pan) sp.pan.value = U.clamp(dist > 1 ? dx / dist : 0, -1, 1) * 0.45;
     sg.connect(sp);
-    this._out(sp, 0.55, 0.35);
+    this._out(sp, 0.70, 0.35);
     sub.start(t); sub.stop(t + 0.52);
 
     // --- 몸통 : 실제로 '쿵' 하고 때리는 층 ---
@@ -812,7 +831,7 @@ const Snd = {
     bo.frequency.exponentialRampToValueAtTime(b0 * 0.40, t + 0.16);
     const bg = ctx.createGain();
     bg.gain.setValueAtTime(0.0001, t);
-    bg.gain.exponentialRampToValueAtTime(0.26 * v, t + 0.008);
+    bg.gain.exponentialRampToValueAtTime(0.40 * v, t + 0.008);
     bg.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
     bo.connect(bg); bg.connect(lp);
     bo.start(t); bo.stop(t + 0.34);
@@ -823,7 +842,7 @@ const Snd = {
     nf.type = 'lowpass'; nf.frequency.value = 240; nf.Q.value = 1.8;
     const ng = ctx.createGain();
     ng.gain.setValueAtTime(0.0001, t);
-    ng.gain.exponentialRampToValueAtTime(0.20 * v, t + 0.010);
+    ng.gain.exponentialRampToValueAtTime(0.30 * v, t + 0.010);
     ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
     ns.connect(nf); nf.connect(ng); ng.connect(lp);
     ns.start(t);
@@ -834,7 +853,7 @@ const Snd = {
       const hp = ctx.createBiquadFilter();
       hp.type = 'highpass'; hp.frequency.value = 1100;
       const ag = ctx.createGain();
-      ag.gain.setValueAtTime(0.085 * v * near, t);
+      ag.gain.setValueAtTime(0.13 * v * near, t);
       ag.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
       ak.connect(hp); hp.connect(ag); ag.connect(lp);
       ak.start(t);
@@ -848,7 +867,7 @@ const Snd = {
       const rg = ctx.createGain();
       const k = (near - 0.42) / 0.58;
       rg.gain.setValueAtTime(0.0001, t);
-      rg.gain.exponentialRampToValueAtTime(0.28 * k * a, t + 0.020);
+      rg.gain.exponentialRampToValueAtTime(0.40 * k * a, t + 0.020);
       rg.gain.exponentialRampToValueAtTime(0.0001, t + 0.70);
       r.connect(rg);
       this._out(rg, 0.85, 0.15);
