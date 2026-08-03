@@ -1504,4 +1504,6 @@ const Game = {
   }
 };
 
-addEventListener('load', () => Game.init());
+/* spec.html 은 이 파일을 상수·수치를 읽으려고 불러온다. 거기서는 게임이 돌면 안 된다
+   (캔버스도 오디오도 없다). 문서 쪽에서 값을 하나 세워 두면 부팅만 건너뛴다. */
+addEventListener('load', () => { if (!window.SPEC_ONLY) Game.init(); });

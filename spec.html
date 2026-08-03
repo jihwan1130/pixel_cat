@@ -1,0 +1,858 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>고양이를 찾아서 — 공략집</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000; color: #d4d4d4;
+    font-family: "Nanum Gothic Coding", "D2Coding", "Consolas", "맑은 고딕", "Malgun Gothic", monospace;
+    padding: 34px 20px 90px;
+    display: flex; flex-direction: column; align-items: center;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.7;
+  }
+  .wrap { width: 100%; max-width: 1180px; }
+
+  h1 { font-size: 19px; font-weight: 400; letter-spacing: .44em; text-indent: .44em;
+       text-shadow: 0 0 24px rgba(255,255,255,.3); }
+  .sub { margin-top: 9px; font-size: 11.5px; letter-spacing: .3em; color: #6a6a6a; }
+  h2 { font-size: 14.5px; font-weight: 400; letter-spacing: .3em; text-indent: .3em;
+       margin: 54px 0 6px; padding-bottom: 9px; border-bottom: 1px solid #242424;
+       text-shadow: 0 0 16px rgba(255,255,255,.22); }
+  h2 .n { color: #4e4e4e; margin-right: 14px; }
+  h3 { font-size: 12.5px; font-weight: 400; letter-spacing: .2em; color: #cfcfcf; margin: 30px 0 10px; }
+  p  { font-size: 12.5px; color: #9c9c9c; margin: 9px 0; }
+  b  { color: #e8e8e8; font-weight: 400; }
+  em { font-style: normal; color: #fff; text-shadow: 0 0 12px rgba(255,255,255,.4); }
+  code { color: #b6b6b6; font-size: 11.5px; }
+  a { color: #cfcfcf; }
+
+  /* 목차 */
+  .toc { margin-top: 24px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .toc a { text-decoration: none; border: 1px solid #262626; padding: 7px 13px;
+           font-size: 11.5px; letter-spacing: .1em; color: #8a8a8a; transition: .18s; }
+  .toc a:hover { color: #fff; border-color: #5c5c5c; background: #101010; }
+
+  /* 표 */
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 12px; }
+  th, td { border: 1px solid #202020; padding: 8px 11px; text-align: left; vertical-align: top; }
+  th { color: #8e8e8e; font-weight: 400; background: #0a0a0a; letter-spacing: .1em; font-size: 11px; }
+  td { color: #a8a8a8; }
+  td.k { color: #e6e6e6; white-space: nowrap; }
+  tr:hover td { background: #090909; }
+
+  /* 진행 흐름 */
+  .flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin: 16px 0; }
+  .fstep { flex: 1 1 150px; border: 1px solid #242424; padding: 12px 13px; background: #070707; }
+  .fstep .t { font-size: 11px; letter-spacing: .2em; color: #6e6e6e; }
+  .fstep .b { font-size: 13px; color: #e4e4e4; margin-top: 5px; }
+  .fstep .d { font-size: 11.5px; color: #8a8a8a; margin-top: 6px; line-height: 1.65; }
+  .fstep.goal { border-color: #4a4a4a; background: #0d0d0d; }
+
+  /* 그것 */
+  .figrow { display: flex; flex-wrap: wrap; gap: 26px; align-items: flex-start; margin-top: 14px; }
+  .figbox { border: 1px solid #242424; padding: 16px 18px; background: #060606; text-align: center; }
+  .figbox canvas { display: block; image-rendering: pixelated; margin: 0 auto; }
+  .figbox .cap { font-size: 11px; color: #7a7a7a; margin-top: 11px; letter-spacing: .12em; }
+
+  /* 맵 */
+  .mapblock { margin-top: 20px; border: 1px solid #1e1e1e; background: #040404; }
+  .maphead { padding: 13px 16px; border-bottom: 1px solid #1c1c1c; display: flex;
+             flex-wrap: wrap; align-items: baseline; gap: 8px 20px; }
+  .maphead .ttl { font-size: 14px; letter-spacing: .3em; color: #fff; }
+  .maphead .meta { font-size: 11.5px; color: #6e6e6e; }
+  .maphead .quote { flex-basis: 100%; font-size: 11.5px; color: #7e7e7e; }
+  .canvaswrap { padding: 12px; display: flex; justify-content: center; }
+  .canvaswrap canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+  .layers { padding: 0 16px 14px; display: flex; flex-wrap: wrap; gap: 7px; }
+  .layers button { appearance: none; background: none; border: 1px solid #262626; color: #6e6e6e;
+                   font: inherit; font-size: 11px; letter-spacing: .1em; padding: 6px 11px;
+                   cursor: pointer; transition: .16s; }
+  .layers button:hover { color: #ddd; border-color: #4e4e4e; }
+  .layers button.on { color: #fff; border-color: #757575; background: #141414; }
+
+  .tip { position: fixed; pointer-events: none; z-index: 50; border: 1px solid #4a4a4a;
+         background: #000; padding: 9px 12px; font-size: 11.5px; color: #ddd;
+         max-width: 300px; line-height: 1.65; opacity: 0; transition: opacity .12s;
+         box-shadow: 0 0 26px rgba(0,0,0,.95); }
+  .tip.on { opacity: 1; }
+  .tip .h { color: #fff; letter-spacing: .1em; }
+  .tip .s { color: #8e8e8e; }
+
+  /* 범례 */
+  .legend { display: flex; flex-wrap: wrap; gap: 7px 20px; padding: 0 16px 16px; font-size: 11px; color: #7a7a7a; }
+  .legend span { display: flex; align-items: center; gap: 7px; }
+  .legend i { width: 13px; height: 13px; display: inline-block; }
+
+  .note { border-left: 2px solid #3a3a3a; padding: 3px 0 3px 15px; margin: 16px 0;
+          color: #8e8e8e; font-size: 12px; }
+  .warn { border-left-color: #8a8a8a; color: #b4b4b4; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; margin-top: 12px; }
+  .card { border: 1px solid #232323; padding: 13px 15px; background: #070707; font-size: 12px; color: #9a9a9a; }
+  .card .h { color: #e6e6e6; font-size: 12.5px; letter-spacing: .12em; margin-bottom: 7px; }
+  .foot { margin-top: 60px; padding-top: 16px; border-top: 1px solid #1c1c1c; font-size: 11px; color: #5a5a5a; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>고양이를 찾아서</h1>
+  <p class="sub">공 략 집 &nbsp;·&nbsp; A MONOCHROME MAZE</p>
+
+  <p style="margin-top:18px">
+    이 문서의 지도·좌표·수색 결과는 <b>게임 코드에서 직접 읽어 그린다</b>.
+    <code>js/levels.js</code> 의 청사진을 그대로 빌드해서 표시하므로 문서만 따로 낡을 일이 없다.
+  </p>
+
+  <div class="toc">
+    <a href="#flow">진행</a>
+    <a href="#figure">그것</a>
+    <a href="#search">수색</a>
+    <a href="#m-alley">하나 · 골목</a>
+    <a href="#m-house">둘 · 낡은 건물</a>
+    <a href="#m-cellar">셋 · 지하</a>
+    <a href="#tips">요약</a>
+    <a href="figure.html">시야 구조 →</a>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="flow"><span class="n">01</span>진행</h2>
+  <div class="flow" id="flowbox"></div>
+  <p>
+    죽으면 <b>1라운드부터 다시</b> 시작한다. 불안도와 흔적도 초기화된다.
+    스테이지는 건너뛸 수 없고, 잠긴 곳은 반드시 열쇠를 찾아야 열린다.
+  </p>
+
+  <!-- ============================================================ -->
+  <h2 id="figure"><span class="n">02</span>그것</h2>
+  <div class="figrow">
+    <div class="figbox">
+      <canvas id="spr-fig"></canvas>
+      <div class="cap">본 체 &nbsp;17 × 32</div>
+    </div>
+    <div class="figbox">
+      <canvas id="spr-face"></canvas>
+      <div class="cap">잡 힐  때 의  얼 굴 &nbsp;33 × 25</div>
+    </div>
+    <div style="flex:1 1 330px;min-width:290px">
+      <p style="margin-top:0">
+        얼굴 하나가 아니라 <b>두 얼굴이 어긋나게 겹쳐</b> 있다. 몸은 속이 순수한 검정이고
+        윤곽만 밝다. 오른쪽에는 몸통보다 훨씬 아래까지 내려오는, 팔꿈치에서 한 번 꺾인
+        가늘고 긴 팔이 따로 매달려 있다.
+      </p>
+      <p>
+        <b>가까울수록 키가 자라고</b>, 머리가 목 위에서 미끄러지듯 통째로 어긋나며,
+        몸은 줄을 세 개씩 묶어 가로로 밀린다. 거리가 가까울수록 일그러짐이 커진다 —
+        <b>눈으로 보는 왜곡과 귀로 듣는 거리가 같은 기준(300px)을 쓴다.</b>
+      </p>
+      <p>
+        <em>빛을 내지 않는다.</em> 오히려 선 자리의 빛을 먹는다. 손전등을 정면으로
+        비췄는데도 그 언저리만 어두워진다.
+      </p>
+    </div>
+  </div>
+
+  <h3>상 태</h3>
+  <table id="statetbl"></table>
+
+  <h3>나오는 자리는 전부 정해져 있다</h3>
+  <p>
+    확률로 튀어나오지 않는다. 시간이 지났다고 저절로 나타나지도 않는다.
+    출현 경로는 <b>셋뿐</b>이고 전부 좌표로 적혀 있다 —
+    <b>같은 판을 다시 하면 같은 자리에서 같은 것이 나온다.</b> 아래 지도에 전부 표시했다.
+  </p>
+  <table>
+    <tr><th style="width:130px">경로</th><th style="width:110px">청사진</th><th>내용</th></tr>
+    <tr><td class="k">서 있다</td><td><code>sentries</code></td>
+        <td>판이 시작될 때부터 그 좌표에 서 있다. 빛을 내지 않으니 손전등이 닿기 전에는 보이지 않는다. <b id="waked"></b> 안에 들어가면 고개를 돌린다.</td></tr>
+    <tr><td class="k">건드리면 나온다</td><td><code>triggers</code></td>
+        <td>정해진 물건을 뒤지면 정해진 자리에 선다. 지도에서 <b>점선 화살표</b>로 이어 두었다.</td></tr>
+    <tr><td class="k">철문을 열면</td><td><code>gateSpawn</code></td>
+        <td>쇠 긁히는 소리는 멀리 간다. 3라운드에서 철문을 열면 반드시 정해진 자리에 하나 선다.</td></tr>
+  </table>
+  <p>
+    여기에 더해, <b>2라운드부터는 상자를 잘못 열면 그 안의 것이 그대로 걸어 나온다.</b>
+    어느 상자가 그런 상자인지도 좌표로 결정되므로 매판 같다 (아래 지도의 <b>공포 · 안에 서 있다</b>).
+  </p>
+
+  <h3>숨 기 — 무엇을 “봤다” 로 볼 것인가</h3>
+  <p>
+    그것의 눈은 <b>손전등과 같은 구조</b>다. 향한 쪽으로 부채꼴이 열리고,
+    그 안에서도 <b>시선이 실제로 닿아야</b> 본다. 판정은 <em>들어가는 것을 봤느냐 아니냐, 그 한 번뿐이다.</em>
+  </p>
+  <table id="viewtbl"></table>
+  <p>
+    시선을 막는 것은 <b>벽 · 창 · 문 · 바깥</b>뿐이다. 연못은 건너편이 보이고 철망과 철문은 살 사이로 비친다.
+    상자·드럼통·가로등 같은 <b>소품은 막지 않는다.</b><br>
+    → <a href="figure.html">figure.html 에서 이 구조를 직접 끌어 보며 확인할 수 있다.</a>
+  </p>
+
+  <h3>들 켰 다 면</h3>
+  <p>나올 수 없다. 문이 열릴 때까지 안에서 듣고 있어야 한다. 문 앞에 선 뒤로는 세 박자가 흐른다.</p>
+  <table id="doortbl"></table>
+  <p class="note warn">
+    <b>두 번째 박자가 이 연출의 전부다.</b> 소리를 전부 걷어내고 문틈을 거의 닫는다.
+    사람은 소리가 커질 때가 아니라 갑자기 사라질 때 숨을 참는다.
+    그리고 <b id="jumpt"></b> 동안 얼굴이 화면을 채운다 — 게임에서 화면을 때리는 곳은 여기 한 곳뿐이다.
+    쫓기다 따라잡히는 죽음은 조용히 끝난다.
+  </p>
+
+  <!-- ============================================================ -->
+  <h2 id="search"><span class="n">03</span>수색</h2>
+  <p>
+    열어볼 수 있는 물체와, 그 안에서 나오는 것. <b>결과는 위치로 한 번 정해지고 바뀌지 않는다.</b>
+    같은 곳을 다시 열어 다른 결과를 뽑을 수 없다.
+  </p>
+  <table id="proptbl"></table>
+  <h3>결 과</h3>
+  <table id="outcometbl"></table>
+  <p class="note">
+    <b>대부분은 비어 있다.</b> 열 때마다 뭔가 나오면 긴장이 아니라 기대가 된다.
+    다만 판마다 흔적·공포의 <b>최소 개수</b>는 보장한다 — 난수에 맡기면 공포 반응이 하나도
+    없는 판이 실제로 나왔다.
+  </p>
+
+  <!-- ============================================================ -->
+  <div id="maps"></div>
+
+  <!-- ============================================================ -->
+  <h2 id="lines"><span class="n">07</span>대사 전문</h2>
+  <p>
+    게임에 나오는 <b>모든 문구</b>다. 화면에 뜨는 글자는 전부 <code>js/i18n.js</code> 한 곳에 있고,
+    이 표는 그 파일을 통째로 읽어 찍는다 — 빠진 것이 있으면 맨 아래 “분류되지 않음” 에 잡힌다.
+  </p>
+  <p class="note">
+    <code>{have}</code> <code>{need}</code> <code>{n}</code> 은 표시할 때 숫자로 바뀐다.
+    가진 조각 수 / 필요한 수 / 모자란 수다. <code>{shard}</code> 는 영어 단·복수(shard·shards)다.
+  </p>
+  <div id="linesbox"></div>
+
+  <!-- ============================================================ -->
+  <h2 id="tips"><span class="n">08</span>요약</h2>
+  <div class="cols">
+    <div class="card">
+      <div class="h">숨을 곳을 미리 봐 둔다</div>
+      쫓기기 시작한 뒤에 찾으면 늦다. 사물함은 <b>뒤질 것이 없고 오직 숨기 위한 자리</b>다.
+      선반과 침대는 뒤질 수는 있어도 <b>들어갈 수는 없다.</b>
+    </div>
+    <div class="card">
+      <div class="h">모퉁이를 세라</div>
+      벌릴 수 있는 길은 셋이다 — <b>멀어지거나 · 꺾거나 · 등 뒤로 돌거나.</b>
+      사거리가 복도보다 짧으므로 뻥 뚫린 직선에서도 충분히 벌리면 안 보인다.
+    </div>
+    <div class="card">
+      <div class="h">흔적은 유일한 보상</div>
+      고양이 흔적을 찾으면 불안도가 <b>내려가고</b> 곧바로 고양이가 한 번 운다 —
+      목표 방향으로 패닝된다. 흔적을 3개 이상 모으면 <b>엔딩에 한 줄이 더 붙는다.</b>
+    </div>
+    <div class="card">
+      <div class="h">열쇠는 확률이 아니다</div>
+      열쇠와 조각은 <b>반드시 정해진 물건 안</b>에 있다. 못 찾으면 진행이 막히는 물건이라
+      확률에 맡기지 않았다. 지도에 좌표를 표시해 두었다.
+    </div>
+    <div class="card">
+      <div class="h">소리가 거리다</div>
+      화면은 알려주지 않는다. <b>심장박동 간격 = 얼마나 가까운가</b>,
+      <b>발소리 패닝 = 어느 쪽인가.</b> 가까이서 발을 딛으면 화면이 같이 울린다.
+    </div>
+    <div class="card">
+      <div class="h">목표는 빛나지 않는다</div>
+      문도 고양이도 저 혼자 빛나지 않는다. <b>손전등으로 직접 쓸어 찾아야 한다.</b>
+      지하 마지막 챔버에는 전구를 하나도 두지 않았다.
+    </div>
+  </div>
+
+  <p class="foot" id="foot"></p>
+</div>
+
+<div class="tip" id="tip"></div>
+
+<script>window.SPEC_ONLY = true;</script>
+<script src="js/i18n.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/tiles.js"></script>
+<script src="js/levels.js"></script>
+<script src="js/game.js"></script>
+<script>
+/* -------------------------------------------------------------------------
+   공략집은 게임 데이터를 그대로 읽어 그린다.
+     · 지도/소품/수색 결과 : Levels.build() 결과 그대로
+     · 수치               : Game 객체의 상수 그대로
+   그래서 밸런스를 만지면 이 문서도 같이 바뀐다. 따로 적어 두지 않는다.
+------------------------------------------------------------------------- */
+
+/* localStorage 를 건드리지 않는다 — I18N.set() 을 쓰면 플레이어가 골라 둔
+   언어를 이 문서를 열었다는 이유만으로 덮어쓴다. */
+I18N.lang = 'ko';
+
+const SHADE = { '0': 0, '1': 0.20, '2': 0.40, '3': 0.62, '4': 0.84, '5': 1 };
+const grey = v => { const c = Math.round(v * 255); return 'rgb(' + c + ',' + c + ',' + c + ')'; };
+
+/* ---------------- 스프라이트 ----------------
+   스프라이트 하나가 없다고 문서 전체가 빈 화면이 되면 안 된다.
+   그림은 곁가지고 지도와 표가 본체다 — 없으면 자리만 비워 두고 넘어간다. */
+function paintSprite(cv, data, s) {
+  if (!Array.isArray(data) || !data.length) {
+    cv.width = 120; cv.height = 60;
+    const g = cv.getContext('2d');
+    g.fillStyle = '#0a0a0a'; g.fillRect(0, 0, 120, 60);
+    g.strokeStyle = '#2e2e2e'; g.strokeRect(.5, .5, 119, 59);
+    g.fillStyle = '#6a6a6a'; g.font = '10px monospace'; g.textAlign = 'center';
+    g.fillText('스프라이트 없음', 60, 34);
+    return;
+  }
+  const w = data[0].length, h = data.length;
+  cv.width = w * s; cv.height = h * s;
+  cv.style.width = (w * s) + 'px';
+  const g = cv.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const c = data[y][x];
+      if (c === '.' || SHADE[c] === undefined) continue;
+      g.fillStyle = grey(SHADE[c]);
+      g.fillRect(x * s, y * s, s, s);
+    }
+}
+const figCv = document.getElementById('spr-fig');
+let fi = 0;
+const drawFig = () => paintSprite(figCv, SPR.FIGURE_FRAMES[fi % SPR.FIGURE_FRAMES.length], 5);
+drawFig();
+paintSprite(document.getElementById('spr-face'), SPR.FACE, 4);
+
+/* 얼굴이 지지직거리는 것을 그대로 보여준다. 다만 읽는 문서라 화면 밖으로
+   나가면 멈춘다 — 12,000px 짜리 문서에서 계속 다시 그릴 이유가 없다. */
+let figTimer = null;
+if (SPR.FIGURE_FRAMES && 'IntersectionObserver' in window) {
+  new IntersectionObserver(es => {
+    const on = es[0].isIntersecting;
+    if (on && !figTimer) figTimer = setInterval(() => { fi++; drawFig(); }, 130);
+    else if (!on && figTimer) { clearInterval(figTimer); figTimer = null; }
+  }).observe(figCv);
+}
+
+/* ---------------- 표 ---------------- */
+const T = (rows) => rows.map(r =>
+  '<tr>' + r.map((c, i) => (r.head ? '<th>' : (i === 0 ? '<td class="k">' : '<td>')) + c +
+  (r.head ? '</th>' : '</td>')).join('') + '</tr>').join('');
+const head = arr => { arr.head = true; return arr; };
+
+document.getElementById('statetbl').innerHTML = T([
+  head(['상태', '언제', '행동']),
+  ['서 있다', '1라운드(골목)', '움직이지 않고 <b>바라보기만</b> 한다. 46px 안으로 다가가면 사라진다. 응시 3.4초.'],
+  ['쫓아온다', '2라운드부터', '주인공 속도의 <b>' + Game.FIG_SPEED + '배</b>(초당 ' +
+    Math.round(Game.SPEED * Game.FIG_SPEED) + 'px). 쉬지 않는다. <b>' + Game.CATCH_D + 'px</b> 안에 들면 잡힌다.'],
+  ['상자 안', '공포 상자를 열었을 때', '2라운드부터는 잠시 뒤 <b>상자 밖으로 걸어 나와</b> 추격으로 바뀐다. 1라운드에서는 한 번 보여주고 사라진다.'],
+  ['서성인다', '못 보고 놓쳤을 때', '마지막으로 본 자리 언저리를 <b>' + Game.PROWL_T + '초</b> 돌아다니다 사라진다. 여기서는 무슨 짓을 해도 못 찾는다.'],
+  ['다가온다', '숨은 것을 봤을 때', '평소의 <b>' + Game.CREEP_SPEED + '배</b>로 아주 느리게. 서두르지 않는다 — 어디로 들어갔는지 알고 있으니까.'],
+  ['포기한다', '멀어졌을 때', '<b>' + Game.GIVEUP_D + 'px</b> 떨어진 채로 2.5초를 버티면 사라진다. 속도차가 초당 ' +
+    Math.round(Game.SPEED - Game.SPEED * Game.FIG_SPEED) + 'px 뿐이라 이보다 크게 잡으면 맵 안에서 따돌릴 수 없다.']
+]);
+
+document.getElementById('viewtbl').innerHTML = T([
+  head(['조건', '결과']),
+  ['부채꼴 밖', '<b>못 본다.</b> 아무리 가까워도. 등 뒤 한 칸도 사각이다. (정면 기준 좌우 <b>' +
+    Game.FIG_FOV + '°</b> — ' + (Game.FIG_FOV * 2) + '도 부채꼴)'],
+  ['구조물이 가로막음', '<b>못 본다.</b> 부채꼴 안이어도. 모퉁이를 꺾는 것이 곧 숨는 것이다.'],
+  ['사거리 밖', '<b>못 본다.</b> 어두워서 보이지 않는다. (<b>' + Game.FIG_VIEW_D + 'px</b> · 약 ' +
+    (Game.FIG_VIEW_D / 16).toFixed(1) + '칸)'],
+  ['위 셋에 걸리지 않음', '<b>본다.</b> 숨은 자리로 곧장 걸어온다.']
+]);
+
+document.getElementById('doortbl').innerHTML = T([
+  head(['박자', '길이', '화면', '소리']),
+  ['긁는다', Game.DOOR_SCRATCH + '초', '명멸이 가장 빠르고 깊다. 문틈이 0.21 → 0.13 으로 좁아진다', '손톱이 문 바깥면을 불규칙하게 긁는다'],
+  ['정 적', Game.DOOR_HUSH + '초', '명멸이 멎는다. 문틈 0.05 — 거의 아무것도 안 보인다', '<b>전부 걷어낸다.</b> 완전한 무음'],
+  ['손잡이', Game.DOOR_KNOB + '초', '그대로', '정적 속에서 딸깍 한 번']
+]);
+document.getElementById('waked').textContent = Game.WAKE_D + 'px';
+document.getElementById('jumpt').textContent = Game.JUMP_T + '초';
+
+/* 소품 종류 */
+const PROP_KO = {
+  lamp: '가로등', tree: '나무', bench: '벤치', bush: '덤불', rock: '바위',
+  bin: '쓰레기통', drum: '드럼통', crate: '나무상자', pallet: '팔레트', sign: '간판',
+  bed: '침대', cabinet: '옷장', chair: '의자', plant: '화분', table: '탁자',
+  shelf: '선반', barrel: '드럼통', locker: '사물함', stairs: '계단', bulb: '전구',
+  boiler: '보일러', pipeV: '배관', pipeH: '배관', puddle: '물웅덩이'
+};
+const ALL = [...new Set([...Levels.SEARCHABLE, ...Levels.CONTAINER])].sort();
+document.getElementById('proptbl').innerHTML = T([
+  head(['물체', '뒤질 수 있나', '숨을 수 있나', '뚜껑이 열리나']),
+  ...ALL.map(n => [
+    PROP_KO[n] + ' <code>' + n + '</code>',
+    Levels.SEARCHABLE.has(n) ? '<b>○</b>' : '×',
+    Levels.CONTAINER.has(n) ? '<b>○</b>' : '×',
+    Levels.OPENABLE.has(n) ? '○ <span style="color:#6a6a6a">— 뒤진 뒤 속이 비어 보인다</span>' : '×'
+  ])
+]);
+
+const OUT_KO = {
+  empty: ['빈 것',   '아무 일도 없다.'],
+  trace: ['고양이 흔적', '불안도가 <b>내려가고</b>, 곧바로 고양이가 한 번 운다 — 목표 방향으로 패닝된다.'],
+  noise: ['소리',    '불안도가 조금 오른다. 쥐가 지나가거나 안쪽에서 무언가 무너진다. <b>실제로 나타나지는 않는다.</b>'],
+  dread: ['공포',    '불안도가 <b>크게</b> 오른다. 다섯 가지 중 좌표로 정해진 하나가 일어난다.'],
+  key:   ['열쇠 · 조각', '잠긴 곳을 여는 물건. <b>반드시 여기서 나온다.</b>']
+};
+document.getElementById('outcometbl').innerHTML = T([
+  head(['결과', '기본 확률', '벌어지는 일']),
+  ['빈 것', '55%', OUT_KO.empty[1]],
+  ['소리', '16%', OUT_KO.noise[1]],
+  ['공포', '15%', OUT_KO.dread[1]],
+  ['고양이 흔적', '14%', OUT_KO.trace[1]],
+  ['열쇠 · 조각', '고정', OUT_KO.key[1]]
+]);
+
+/* 공포 상자가 무엇을 일으키는가 — game.js dreadEvent() 와 같은 식 */
+const DREAD_KINDS = ['figure', 'torch', 'bell', 'deep', 'behind'];
+const DREAD_KO = {
+  figure: ['안에 서 있다', '<b>그것이 상자 안에 있다.</b> 2라운드부터는 걸어 나와 추격이 시작된다.'],
+  torch:  ['손전등이 꺼진다', '2.1초 동안 시야가 거의 사라졌다가 깜빡이며 돌아온다.'],
+  bell:   ['귀 옆에서 종',   '잔향 없이 바로 옆에서 울린다. 소리뿐이다.'],
+  deep:   ['깊이가 이상하다', '스팅 음. 소리뿐이다.'],
+  behind: ['뒤에서 문이 닫힌다', '방금 지나온 곳에서 소리가 난다. 소리뿐이다.']
+};
+const dreadKindOf = pr => DREAD_KINDS[(pr.tx * 7 + pr.ty * 13) % DREAD_KINDS.length];
+
+/* ---------------- 진행 흐름 ---------------- */
+/* STAGES 는 game.js 가 선언해 둔 것을 그대로 쓴다 — 순서를 두 곳에 적지 않는다 */
+const MAPS = STAGES.map(n => Levels.build(n));
+const PARK = Levels.build('park');
+
+document.getElementById('flowbox').innerHTML = [
+  { t: '00', b: '공원', d: '도입 연출. 조작 없음. <code>SPACE</code> 로 건너뛴다.' },
+  ...MAPS.map((m, i) => ({
+    t: '0' + (i + 1), b: m.title.replace(/\s+/g, ' '),
+    d: (m.lock
+        ? '<b>' + (m.lock.kind === 'key' ? '열쇠 1개' : '조각 3개') + '</b> 를 찾아야 목표가 열린다. '
+        : '') +
+       '목표 : ' + (m.goal.type === 'door' ? '문' : '<b>고양이</b>') +
+       ' (' + m.goal.tx + ', ' + m.goal.ty + ')'
+  })),
+  { t: '★', b: '엔딩', d: '고양이를 부르면 끝난다. 흔적을 3개 이상 모았다면 한 줄이 더 붙는다.', goal: 1 }
+].map(s => '<div class="fstep' + (s.goal ? ' goal' : '') + '">' +
+  '<div class="t">' + s.t + '</div><div class="b">' + s.b + '</div><div class="d">' + s.d + '</div></div>').join('');
+
+/* =================================================================
+   지도
+================================================================= */
+/* 걸을 수 있는 칸(walk)에는 옅은 격자를 깐다. 게임 화면에서는 어둠이 핵심이지만
+   지도에서는 길이 어디로 이어지는지가 먼저 읽혀야 한다 — 새까맣게 두면
+   벽 덩어리만 보이고 정작 다니는 길이 배경처럼 보인다. */
+const TILE_STYLE = {
+  0: null,                                             // void — 검정
+  1: { fill: '#161616', line: '#2e2e2e', hatch: 1 },   // wall
+  2: { fill: '#0b0b0b', walk: 1 },                     // floor
+  3: { fill: '#0c100c', walk: 1, speck: 1 },           // grass
+  4: { fill: '#081016', wave: 1 },                     // water
+  5: { fill: '#141414' },                              // curb
+  6: { fill: '#0a0a0a', bars: 1 },                     // fence
+  7: { fill: '#c8c8c8' },                              // door
+  8: { fill: '#1c1c22', win: 1 },                      // window
+  9: { fill: '#101018', bars: 1, gate: 1 },            // gate
+  10:{ fill: '#0b0b0b', walk: 1 }                      // gateOpen
+};
+
+/* 표시할 것들. 켜고 끌 수 있다. */
+const LAYERS = [
+  { id: 'route',  label: '시작 · 목표', on: true },
+  { id: 'key',    label: '열쇠 · 조각', on: true },
+  { id: 'search', label: '수색 결과',   on: true },
+  { id: 'hide',   label: '숨을 자리',   on: true },
+  { id: 'fig',    label: '그것',        on: true }
+];
+
+const MARK = {
+  key:    { c: '#ffffff', r: 6 },
+  trace:  { c: '#e2e2e2', r: 5 },
+  dread:  { c: '#c0c0c0', r: 5 },
+  noise:  { c: '#8a8a8a', r: 4 },
+  empty:  { c: '#4a4a4a', r: 3 },
+  hide:   { c: '#7e7e7e', r: 5 },
+  fig:    { c: '#ffffff', r: 6 },
+  start:  { c: '#ffffff', r: 7 },
+  goal:   { c: '#ffffff', r: 8 }
+};
+
+function buildMapBlock(map, idx) {
+  const id = 'm-' + map.name;
+  const wrap = document.createElement('div');
+  wrap.innerHTML =
+    '<h2 id="' + id + '"><span class="n">0' + (idx + 4) + '</span>' + map.title.replace(/\s+/g, ' ') + '</h2>' +
+    '<div class="mapblock">' +
+      '<div class="maphead">' +
+        '<span class="ttl">' + map.W + ' × ' + map.H + '</span>' +
+        '<span class="meta">시작 (' + (map.start.x / map.T | 0) + ', ' + (map.start.y / map.T | 0) + ')' +
+          ' &nbsp;·&nbsp; 목표 ' + (map.goal.type === 'door' ? '문' : '고양이') +
+          ' (' + map.goal.tx + ', ' + map.goal.ty + ')' +
+          ' &nbsp;·&nbsp; 수색 대상 ' + map.searchTotal + '개' +
+          (map.lock ? ' &nbsp;·&nbsp; 잠김 ' + map.lock.need + '개' : '') + '</span>' +
+        '<span class="quote">' + map.lines.join(' ') + '</span>' +
+      '</div>' +
+      '<div class="canvaswrap"><canvas></canvas></div>' +
+      '<div class="layers"></div>' +
+      '<div class="legend"></div>' +
+    '</div>' +
+    '<div class="detail"></div>';
+
+  const cv = wrap.querySelector('canvas');
+  const layerBox = wrap.querySelector('.layers');
+  const state = {};
+  for (const L of LAYERS) state[L.id] = L.on;
+
+  for (const L of LAYERS) {
+    const b = document.createElement('button');
+    b.textContent = L.label;
+    b.className = state[L.id] ? 'on' : '';
+    b.onclick = () => { state[L.id] = !state[L.id]; b.className = state[L.id] ? 'on' : ''; render(); };
+    layerBox.appendChild(b);
+  }
+
+  wrap.querySelector('.legend').innerHTML = [
+    ['#0b0b0b;border:1px solid #262626', '길 — 걸을 수 있다'],
+    ['#161616;border:1px solid #3a3a3a', '벽 · 건물 — 시선을 막는다'],
+    ['#081016;border:1px solid #1c2c36', '물 — 못 건너지만 보인다'],
+    ['#0a0a0a;border:1px solid #3a3a3a', '철망 · 철문 — 살 사이로 보인다'],
+    ['#c8c8c8', '문'],
+    [MARK.key.c, '열쇠 · 조각'],
+    [MARK.trace.c, '고양이 흔적'],
+    [MARK.dread.c, '공포'],
+    [MARK.noise.c, '소리'],
+    [MARK.empty.c, '빈 것'],
+    [MARK.hide.c, '숨을 자리'],
+    ['#ffffff', '그것 — 서는 자리']
+  ].map(([c, t]) => '<span><i style="background:' + c + '"></i>' + t + '</span>').join('');
+
+  /* --- 그리기 --- */
+  const S = 18;                       // 칸당 픽셀
+  cv.width = map.W * S; cv.height = map.H * S;
+  wrap.querySelector('.canvaswrap').style.maxWidth =
+    Math.round(64 * (map.W / map.H)) + 'vh';
+  const g = cv.getContext('2d');
+  let hits = [];
+
+  function tiles() {
+    for (let ty = 0; ty < map.H; ty++)
+      for (let tx = 0; tx < map.W; tx++) {
+        const st = TILE_STYLE[map.grid[ty][tx]];
+        const x = tx * S, y = ty * S;
+        if (!st) { g.fillStyle = '#000'; g.fillRect(x, y, S, S); continue; }
+        g.fillStyle = st.fill; g.fillRect(x, y, S, S);
+        if (st.walk) {
+          g.strokeStyle = '#181818'; g.lineWidth = 1;
+          g.strokeRect(x + .5, y + .5, S - 1, S - 1);
+        }
+        if (st.hatch) {
+          g.fillStyle = '#242424';
+          for (let i = 3; i < S; i += 6) g.fillRect(x + 1, y + i, S - 2, 1);
+          g.strokeStyle = st.line; g.lineWidth = 1;
+          g.strokeRect(x + .5, y + .5, S - 1, S - 1);
+        }
+        if (st.speck) { g.fillStyle = '#182018';
+          for (let i = 0; i < 5; i++) g.fillRect(x + ((tx * 7 + i * 5) % S), y + ((ty * 11 + i * 3) % S), 1, 1); }
+        if (st.wave) { g.fillStyle = '#1c2c36';
+          for (let i = 3; i < S; i += 6) g.fillRect(x + 2, y + i, S - 4, 1); }
+        if (st.bars) { g.fillStyle = st.gate ? '#5a5a6a' : '#2a2a2a';
+          for (let i = 2; i < S; i += 4) g.fillRect(x + i, y + 1, 1, S - 2); }
+        if (st.win) { g.fillStyle = '#33333e'; g.fillRect(x + 3, y + 3, S - 6, S - 6); }
+      }
+  }
+
+  const cx = t => t * S + S / 2;
+
+  function diamond(x, y, r, fill, stroke) {
+    g.beginPath(); g.moveTo(x, y - r); g.lineTo(x + r, y); g.lineTo(x, y + r); g.lineTo(x - r, y);
+    g.closePath();
+    if (fill) { g.fillStyle = fill; g.fill(); }
+    if (stroke) { g.strokeStyle = stroke; g.lineWidth = 1.5; g.stroke(); }
+  }
+  function ring(x, y, r, c, lw) {
+    g.beginPath(); g.arc(x, y, r, 0, 7);
+    g.fillStyle = '#000'; g.fill();
+    g.strokeStyle = c; g.lineWidth = lw || 1.5; g.stroke();
+  }
+  function label(x, y, txt, c) {
+    g.font = '8px Consolas, monospace'; g.textAlign = 'center';
+    const w = g.measureText(txt).width + 7;
+    g.fillStyle = 'rgba(0,0,0,.88)'; g.fillRect(x - w / 2, y - 8, w, 11);
+    g.fillStyle = c; g.fillText(txt, x, y);
+    g.textAlign = 'left';
+  }
+
+  function render() {
+    g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height);
+    tiles();
+    hits = [];
+    const add = (tx, ty, title, body) => hits.push({ x: cx(tx), y: cx(ty), title, body });
+
+    /* 트리거 화살표 — 무엇을 건드리면 어디에 서는가 */
+    if (state.fig) {
+      g.setLineDash([4, 4]); g.lineWidth = 1;
+      for (const [k, spot] of map.triggers) {
+        const [px, py] = k.split(',').map(Number);
+        g.strokeStyle = 'rgba(255,255,255,.42)';
+        g.beginPath(); g.moveTo(cx(px), cx(py)); g.lineTo(spot.x, spot.y - S / 2 + 2); g.stroke();
+      }
+      g.setLineDash([]);
+    }
+
+    /* 수색 대상 */
+    if (state.search || state.key) {
+      for (const pr of map.props) {
+        if (!pr.searchable) continue;
+        const isKey = pr.outcome === 'key';
+        if (isKey ? !state.key : !state.search) continue;
+        const m = MARK[pr.outcome] || MARK.empty;
+        const x = cx(pr.tx), y = cx(pr.ty);
+        if (isKey) {
+          diamond(x, y, 7, '#fff', null);
+          diamond(x, y, 11, null, 'rgba(255,255,255,.5)');
+        } else if (pr.outcome === 'dread') {
+          ring(x, y, m.r, m.c);
+          g.strokeStyle = m.c; g.lineWidth = 1.4;
+          g.beginPath();
+          g.moveTo(x - 3, y - 3); g.lineTo(x + 3, y + 3);
+          g.moveTo(x + 3, y - 3); g.lineTo(x - 3, y + 3); g.stroke();
+        } else if (pr.outcome === 'trace') {
+          ring(x, y, m.r, m.c, 2);
+          g.fillStyle = m.c; g.fillRect(x - 1, y - 1, 2, 2);
+        } else {
+          ring(x, y, m.r, m.c, 1.2);
+        }
+        const kind = pr.outcome === 'dread' ? dreadKindOf(pr) : null;
+        const trig = map.triggers.get(pr.tx + ',' + pr.ty);
+        add(pr.tx, pr.ty,
+          PROP_KO[pr.n] + ' (' + pr.tx + ', ' + pr.ty + ')',
+          '<span class="s">' + OUT_KO[pr.outcome][0] + '</span><br>' +
+          (kind ? '<b>' + DREAD_KO[kind][0] + '</b> — ' + DREAD_KO[kind][1] + '<br>' : '') +
+          (pr.outcome !== 'key' && pr.outcome !== 'dread'
+            ? '<span class="s">“' + Levels.flavor(pr.outcome, pr.flavorIdx) + '”</span><br>' : '') +
+          (trig ? '<b>건드리면 그것이 (' + trig.tx + ', ' + trig.ty + ') 에 선다.</b><br>' : '') +
+          (Levels.CONTAINER.has(pr.n) ? '<span class="s">여기에 숨을 수 있다.</span>' : ''));
+      }
+    }
+
+    /* 숨을 자리 (뒤질 것이 없는 사물함 포함) */
+    if (state.hide) {
+      for (const pr of map.props) {
+        if (!Levels.CONTAINER.has(pr.n)) continue;
+        if (pr.searchable) continue;               // 위에서 이미 그렸다
+        const x = cx(pr.tx), y = cx(pr.ty);
+        g.strokeStyle = MARK.hide.c; g.lineWidth = 1.6;
+        g.strokeRect(x - 5, y - 6, 10, 12);
+        g.beginPath(); g.moveTo(x - 5, y - 1); g.lineTo(x + 5, y - 1); g.stroke();
+        add(pr.tx, pr.ty, PROP_KO[pr.n] + ' (' + pr.tx + ', ' + pr.ty + ')',
+          '<span class="s">뒤질 것은 없다. <b>오직 숨기 위한 자리</b>다.</span>');
+      }
+    }
+
+    /* 그것 */
+    if (state.fig) {
+      const figMark = (px, py, txt, body) => {
+        ring(px, py, MARK.fig.r, '#fff', 2);
+        g.fillStyle = '#fff'; g.fillRect(px - 1, py - 3, 2, 2);
+        label(px, py - 11, txt, '#fff');
+        hits.push({ x: px, y: py, title: '그것', body });
+      };
+      for (const s of map.sentries)
+        figMark(s.x, s.y - S / 2 + 2, '서 있다',
+          '판이 시작될 때부터 여기 서 있다. <b>' + Game.WAKE_D + 'px</b> 안에 들어가면 고개를 돌린다.');
+      for (const [k, spot] of map.triggers) {
+        const [px, py] = k.split(',').map(Number);
+        figMark(spot.x, spot.y - S / 2 + 2, '나타난다',
+          '(' + px + ', ' + py + ') 의 물건을 뒤지면 <b>여기에 선다.</b>');
+      }
+      if (map.gateSpawn)
+        figMark(map.gateSpawn.x, map.gateSpawn.y - S / 2 + 2, '철문',
+          '철문을 열면 <b>반드시 여기에 하나 선다.</b> 쇠 긁히는 소리는 멀리 간다.');
+    }
+
+    /* 시작 · 목표 · 철문 */
+    if (state.route) {
+      const sx = map.start.x, sy = map.start.y;
+      ring(sx, sy, MARK.start.r, '#fff', 2);
+      label(sx, sy - 12, '시작', '#fff');
+      hits.push({ x: sx, y: sy, title: '시작 지점', body: '여기서 출발한다.' });
+
+      const G = map.goal;
+      const gx = cx(G.tx), gy = cx(G.ty);
+      g.strokeStyle = '#fff'; g.lineWidth = 2;
+      g.strokeRect(gx - 9, gy - 9, 18, 18);
+      g.strokeStyle = 'rgba(255,255,255,.45)'; g.lineWidth = 1;
+      g.strokeRect(gx - 13, gy - 13, 26, 26);
+      label(gx, gy - 17, G.type === 'door' ? '목표 · 문' : '목표 · 고양이', '#fff');
+      hits.push({ x: gx, y: gy, title: G.type === 'door' ? '목표 — 문' : '목표 — 고양이',
+        body: map.lock
+          ? '<b>' + (map.lock.kind === 'key' ? '열쇠' : '조각 3개') + '</b> 가 없으면 열리지 않는다.'
+          : '바로 열린다.' });
+
+      if (map.gate) {
+        g.strokeStyle = '#fff'; g.lineWidth = 2;
+        for (const [tx, ty] of map.gate.tiles) g.strokeRect(tx * S + 1, ty * S + 1, S - 2, S - 2);
+        label(map.gate.x, map.gate.y - 14, '철문 · 자물쇠 3', '#fff');
+        hits.push({ x: map.gate.x, y: map.gate.y, title: '철문',
+          body: '<b>조각 3개</b>를 모두 모아야 열린다. 여는 순간 정해진 자리에 그것이 선다.' });
+      }
+    }
+  }
+
+  /* --- 마우스를 올리면 상세 --- */
+  const tip = document.getElementById('tip');
+  cv.addEventListener('mousemove', e => {
+    const b = cv.getBoundingClientRect();
+    const mx = (e.clientX - b.left) / b.width * cv.width;
+    const my = (e.clientY - b.top) / b.height * cv.height;
+    let best = null, bd = 16;
+    for (const h of hits) { const d = Math.hypot(h.x - mx, h.y - my); if (d < bd) { bd = d; best = h; } }
+    if (!best) { tip.className = 'tip'; return; }
+    tip.innerHTML = '<div class="h">' + best.title + '</div>' + best.body;
+    tip.className = 'tip on';
+    tip.style.left = Math.min(innerWidth - 320, e.clientX + 16) + 'px';
+    tip.style.top = (e.clientY + 16) + 'px';
+  });
+  cv.addEventListener('mouseleave', () => { tip.className = 'tip'; });
+
+  render();
+
+  /* --- 이 판의 목록 --- */
+  const searchables = map.props.filter(p => p.searchable);
+  const keys = searchables.filter(p => p.outcome === 'key');
+  const traces = searchables.filter(p => p.outcome === 'trace');
+  const dreads = searchables.filter(p => p.outcome === 'dread');
+  const hides = map.props.filter(p => Levels.CONTAINER.has(p.n));
+  const pos = p => '(' + p.tx + ', ' + p.ty + ')';
+
+  const rows = [head(['무엇', '개수', '좌표'])];
+  if (keys.length) rows.push(['<b>열쇠 · 조각</b>', keys.length,
+    keys.map(p => PROP_KO[p.n] + ' ' + pos(p)).join(' · ')]);
+  rows.push(['고양이 흔적', traces.length, traces.map(p => PROP_KO[p.n] + ' ' + pos(p)).join(' · ') || '—']);
+  rows.push(['공포', dreads.length,
+    dreads.map(p => PROP_KO[p.n] + ' ' + pos(p) + ' <span style="color:#7a7a7a">' +
+      DREAD_KO[dreadKindOf(p)][0] + '</span>').join(' · ') || '—']);
+  rows.push(['숨을 자리', hides.length, hides.map(p => PROP_KO[p.n] + ' ' + pos(p)).join(' · ')]);
+  rows.push(['그것 — 서 있다', map.sentries.length,
+    map.sentries.map(s => '(' + (s.x / map.T | 0) + ', ' + (s.y / map.T | 0) + ')').join(' · ') || '—']);
+  rows.push(['그것 — 건드리면', map.triggers.size,
+    [...map.triggers].map(([k, v]) => k.replace(',', ', ') + ' → (' + v.tx + ', ' + v.ty + ')')
+      .map(s => '(' + s + ')').join(' · ') || '—']);
+
+  wrap.querySelector('.detail').innerHTML = '<table>' + T(rows) + '</table>';
+  return wrap;
+}
+
+const host = document.getElementById('maps');
+MAPS.forEach((m, i) => host.appendChild(buildMapBlock(m, i)));
+
+/* =================================================================
+   대사 전문
+     STRINGS 를 통째로 훑어 찍는다. 손으로 옮겨 적지 않는다 —
+     옮겨 적으면 문장을 고칠 때마다 이 문서가 조용히 틀려진다.
+     아래 분류에 걸리지 않은 키는 마지막에 따로 모아 드러낸다.
+================================================================= */
+const TEXT_GROUPS = [
+  ['타이틀 · 화면', '게임을 켜면 처음 보이는 것들.', [
+    'game.title', 'game.titleSpaced', 'game.sub', 'game.end', 'doc.title',
+    'title.lang', 'title.startKey', 'title.startTouch',
+    'title.ctrlKeys', 'title.ctrlTouch', 'title.sound', 'rotate']],
+
+  ['조작 안내', '판이 시작될 때 잠깐 떴다 사라진다.', [
+    'hint.skipKey', 'hint.skipTouch', 'hint.moveKeys', 'hint.moveTouch',
+    'hint.restartKey', 'hint.restartTouch']],
+
+  ['도입 — 공원', '순서대로 나온다. <code>SPACE</code> 로 건너뛸 수 있다.', [
+    'intro.1', 'intro.2', 'intro.3', 'intro.4', 'intro.5', 'intro.6']],
+
+  ['스테이지 도입', '판이 시작되고 1.7초 뒤에 나온다. 잠긴 판에는 마지막 한 줄이 더 붙는다.', [
+    'level.alley.title', 'level.alley.lines',
+    'level.house.title', 'level.house.lines',
+    'level.cellar.title', 'level.cellar.lines',
+    'lock.key', 'lock.shard']],
+
+  ['상호작용 힌트', '대상에 가까이 가면 화면 아래에 뜬다.', [
+    'hint.hide', 'hint.hideNow', 'hint.exitHide',
+    'hint.door', 'hint.cat', 'hint.doorLocked',
+    'hint.gateOpen', 'hint.gateLocked']],
+
+  ['수색 동작', '무엇을 뒤지는지에 따라 힌트가 바뀐다. 앞에 <code>E — </code> 가 붙는다.', [
+    'verb.cabinet', 'verb.bed', 'verb.shelf', 'verb.bin', 'verb.drum', 'verb.crate']],
+
+  ['수색 결과 — 빈 것', '<b>가장 많이 보게 되는 문장이다.</b> 어느 것이 나올지는 물건의 좌표로 정해진다.', [
+    'flavor.empty']],
+  ['수색 결과 — 고양이 흔적', '유일한 보상. 이 문장이 뜨면 곧바로 고양이가 한 번 운다.', [
+    'flavor.trace']],
+  ['수색 결과 — 소리', '놀라기는 하되 <b>실제로 나타나지는 않는다.</b>', [
+    'flavor.noise']],
+
+  ['공포', '잘못 연 쪽. 다섯 중 무엇이 나올지는 좌표로 정해진다.', [
+    'dread.figure', 'dread.torch', 'dread.bell', 'dread.deep', 'dread.behind']],
+
+  ['열쇠 · 철문', '', [
+    'key.take', 'key.shard', 'key.last', 'gate.rattle', 'gate.opened', 'door.rattle']],
+
+  ['그것', '', ['fig.wake', 'fig.outOfBox', 'fig.sawMe', 'fig.atDoor', 'hide.enter']],
+
+  ['죽음', '<code>found</code> 는 숨은 문이 열린 쪽, <code>caught</code> 는 쫓기다 잡힌 쪽이다.', [
+    'death.found', 'death.caught', 'death.again']],
+
+  ['문 · 엔딩', '<code>end.traces</code> 는 <b>흔적을 3개 이상</b> 모았을 때만 붙는다.', [
+    'door.through', 'end.1', 'end.2', 'end.traces', 'end.3', 'end.4', 'end.5']]
+];
+
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const META = ['_name', '_speed'];
+
+function lineRows(key) {
+  const ko = STRINGS.ko[key], en = STRINGS.en[key];
+  if (Array.isArray(ko)) {
+    return ko.map((v, i) => [
+      '<code>' + key + '</code> <span style="color:#5e5e5e">[' + i + ']</span>',
+      esc(v), esc(en[i])
+    ]);
+  }
+  return [['<code>' + key + '</code>', esc(ko), esc(en)]];
+}
+
+const used = new Set(META);
+let linesHtml = '';
+for (const [title, desc, keys] of TEXT_GROUPS) {
+  const rows = [head(['키', '한국어', 'English'])];
+  for (const k of keys) {
+    if (STRINGS.ko[k] === undefined) { rows.push(['<code>' + k + '</code>', '<b>— 없는 키 —</b>', '']); continue; }
+    used.add(k);
+    for (const r of lineRows(k)) rows.push(r);
+  }
+  linesHtml += '<h3>' + title + '</h3>' +
+    (desc ? '<p style="margin-top:2px">' + desc + '</p>' : '') +
+    '<table>' + T(rows) + '</table>';
+}
+
+/* 어느 분류에도 안 들어간 것 — 문장을 추가하고 여기 못 넣으면 여기서 드러난다 */
+const left = Object.keys(STRINGS.ko).filter(k => !used.has(k));
+if (left.length) {
+  const rows = [head(['키', '한국어', 'English'])];
+  for (const k of left) for (const r of lineRows(k)) rows.push(r);
+  linesHtml += '<h3>분류되지 않음</h3>' +
+    '<p style="margin-top:2px" class="note warn">이 문서의 분류에 아직 안 들어간 문장이다. ' +
+    'spec.html 의 <code>TEXT_GROUPS</code> 에 넣어야 한다.</p>' +
+    '<table>' + T(rows) + '</table>';
+}
+
+linesHtml += '<p style="color:#5e5e5e;font-size:11.5px">' +
+  '총 <b>' + Object.keys(STRINGS.ko).filter(k => !META.includes(k)).length + '개</b> 항목 · ' +
+  '문장 <b>' + Object.keys(STRINGS.ko).filter(k => !META.includes(k))
+    .reduce((n, k) => n + (Array.isArray(STRINGS.ko[k]) ? STRINGS.ko[k].length : 1), 0) + '줄</b>' +
+  (left.length ? ' · <b style="color:#fff">분류 누락 ' + left.length + '개</b>' : ' · 누락 없음') +
+  '</p>';
+
+document.getElementById('linesbox').innerHTML = linesHtml;
+
+document.getElementById('foot').innerHTML =
+  '지도와 좌표는 <code>Levels.build()</code>, 수치는 <code>Game</code> 상수에서 직접 읽었다. ' +
+  '공원(도입)은 조작이 없어 생략했다 — ' + PARK.W + ' × ' + PARK.H + ', 소품 ' + PARK.props.length + '개.';
+</script>
+</body>
+</html>
