@@ -42,10 +42,24 @@ const Game = {
   FIG_SPEED: 0.7,            // 주인공 속도의 배율. 느리지만 쉬지 않는다.
   CREEP_SPEED: 0.30,         // 숨은 자리를 찾아낸 뒤 다가올 때. 느릴수록 길게 조인다.
   CATCH_D: 13,               // 잡히는 거리
-  SEEN_D: 84,                // 이 안에서 숨으면 들어가는 것을 본다.
-                             // 이보다 멀면 못 본다 — 판정은 오직 이 거리 하나다.
-                             // 넓게 잡으면(150 으로 해 봤다) 추격 중에는 늘 이 안이라
-                             // 숨는다는 선택지 자체가 없어진다.
+  /* --- 그것의 시야 ---
+     예전에는 거리 하나(84px)로만 판정했다. 바로 뒤에서 벽 하나 끼고 들어가도
+     들켰고, 훤히 뚫린 복도 저 끝에서 들어가면 안 들켰다. 둘 다 보이는 것과
+     반대라 플레이어가 규칙을 학습할 수 없었다 — 운으로 읽힌다.
+
+     손전등과 같은 구조로 바꾼다. 그것이 향한 쪽으로 부채꼴이 열리고,
+     그 안에서도 시선이 실제로 닿아야 본다.
+
+       · 부채꼴 밖   — 아무리 가까워도 못 본다. 등 뒤 한 칸도 사각이다.
+       · 벽 너머     — 부채꼴 안이어도 못 본다.
+       · 뚫린 직선   — 부채꼴 안이고 시선이 닿으면, 아무리 멀어도 본다.
+
+     그래서 "얼마나 벌리고 숨을까" 가 "어디서 꺾고 숨을까" 로 바뀐다.
+     거리를 재는 대신 모퉁이를 세게 된다. */
+  FIG_FOV: 58,               // 정면 기준 좌우 각도(도). 116도 부채꼴.
+  FIG_VIEW_D: 460,           // 이 너머는 어두워서 못 본다. 가장 긴 직선 복도보다 길다.
+  VIEW_SQUASH: 1.15,         // 렌더러의 광원 감쇠와 같은 종횡비
+                             // (figure.html 로 이 구조를 그려 볼 수 있다)
   NEAR_MISS_D: 40,           // 서성이다 이만큼 스치면 문 앞에서 한 번 멈춘다.
                              // 놀라기는 하되 찾아내지는 않는다 — 못 봤으면 못 찾는다.
   WAKE_D: 132,               // 서 있던 것이 이쪽을 알아채는 거리
@@ -153,6 +167,7 @@ const Game = {
       case 'title':  this.updTitle(dt);  break;
       case 'intro':  this.updIntro(dt);  break;
       case 'play':   this.updPlay(dt);   break;
+      case 'jump':   this.updJump(dt);   break;
       case 'dead':   this.updateTimeline(dt); break;
       case 'ending': this.updEnding(dt); break;
       case 'end':    this.updEnd(dt);    break;
@@ -276,6 +291,9 @@ const Game = {
     this.fade = 0;
     this.fadeTo(1, 2.2);
     this.showStageTitle(m.title, 3.6);
+    // 문 앞 정적에서 master 를 내려 둔 채로 여기 들어올 수 있다.
+    // 판이 시작되는데 소리가 없으면 그때부터 게임이 통째로 무음이 된다.
+    Snd.unhush(0.5);
     Snd.setAmbience(1, 3);
 
     // 잠긴 곳이 있는 판은 무엇을 찾아야 하는지 한 줄로 알려 준다.
@@ -584,15 +602,42 @@ const Game = {
   newFigure(x, y, mode) {
     const P = this.player;
     const px = P.x + 4, py = P.y + 4;
+    // 나타나는 순간에는 이쪽을 보고 있다. 등을 돌린 채 생겨나면
+    // 나타나자마자 사각이 생겨 첫 판정이 우연이 된다.
+    const dx = px - x, dy = py - y, dl = Math.hypot(dx, dy) || 1;
     return {
       x, y, mode, becomes: null,
       t: 3.4,                  // 응시 시간. 판마다 달라지면 안 되므로 고정값이다.
       farT: 0, lostT: 0, hunt: null, prowlT: 0, prowlTo: null, missT: 0,
       flow: null, flowT: 0, stepT: 0, stuckT: 0, arriveT: 0,
+      scratched: false, hushed: false, knobbed: false,
+      dir: { x: dx / dl, y: dy / dl },   // 향하고 있는 쪽. 걸어간 방향을 따라간다.
       lastSeen: { x: px, y: py },
       trail: { x: px, y: py },
       glitchSeed: Math.random()  // 얼굴 지지직 프레임의 위상. 개체마다 어긋나야 한다.
     };
+  },
+
+  /* 그것이 (x,y) 를 보고 있는가.
+     부채꼴 안인가 → 시선이 닿는가. 순서를 바꾸면 안 된다 —
+     각도 검사가 훨씬 싸고, 대부분은 여기서 걸러진다. */
+  figSees(F, x, y) {
+    const dx = x - F.x, dy = y - F.y;
+    const d = Math.hypot(dx, dy);
+    if (d > this.FIG_VIEW_D) return false;
+    if (d < 1) return true;
+
+    // 화면이 위아래로 눌려 있으므로(렌더러 광원 감쇠와 같은 1.15) 각도도 같은
+    // 비율로 펴서 잰다. 방향과 상대 위치를 같은 공간에서 재야 눈에 보이는
+    // 부채꼴과 판정이 어긋나지 않는다.
+    const dir = F.dir || { x: 1, y: 0 };
+    const K = this.VIEW_SQUASH;
+    const ax = dx, ay = dy * K;
+    const bx = dir.x, by = dir.y * K;
+    const cos = (ax * bx + ay * by) / (Math.hypot(ax, ay) * Math.hypot(bx, by) || 1);
+    if (cos < Math.cos(this.FIG_FOV * Math.PI / 180)) return false;
+
+    return Levels.sees(this.map, F.x, F.y, x, y);
   },
 
   /* 얼굴(눈·입) 프레임을 짧고 불규칙한 간격으로 건너뛰며 고른다 —
@@ -749,6 +794,18 @@ const Game = {
     const bx = F.x, by = F.y;
     this.flowStep(F, speed, dt);
 
+    /* 향한 쪽은 실제로 걸어간 쪽이다. 한 프레임에 홱 돌지 않게 물린다 —
+       모퉁이를 도는 동안 부채꼴이 순간이동하면 숨는 타이밍을 읽을 수 없다. */
+    const mvx = F.x - bx, mvy = F.y - by;
+    const ml = Math.hypot(mvx, mvy);
+    if (ml > 0.01) {
+      const k = 1 - Math.pow(0.004, dt);
+      F.dir.x += (mvx / ml - F.dir.x) * k;
+      F.dir.y += (mvy / ml - F.dir.y) * k;
+      const dl = Math.hypot(F.dir.x, F.dir.y) || 1;
+      F.dir.x /= dl; F.dir.y /= dl;
+    }
+
     // 갈 길을 못 찾고 굳어버리는 경우가 있다(닿을 수 없는 자리에 선 경우 등).
     // 그대로 두면 화면 어딘가에 영원히 서 있게 되므로 잠시 뒤 사라지게 한다.
     // 숨은 자리 앞에 도착해 멈춰 선 것은 굳은 것이 아니다 — 세지 않는다.
@@ -800,18 +857,19 @@ const Game = {
     if (F.hunt) {
       const d = U.dist(F.hunt.x, F.hunt.y, F.x, F.y);
       // 숨은 물건 자체가 막힌 칸이라 바로 앞 칸까지밖에 못 온다.
-      // 한 칸(16px) 남은 자리를 "도착" 으로 보고, 거기서 잠깐 서 있게 한다 —
-      // 문이 열리기 직전의 그 정적이 이 연출의 전부다.
+      // 한 칸(16px) 남은 자리를 "도착" 으로 보고, 거기서부터 세 박자를 쌓는다.
       const arrived = d < 30;
-      if (arrived) F.arriveT = (F.arriveT || 0) + dt;
+      if (!arrived) {
+        const near = U.clamp(1 - d / 190, 0, 1);
+        // 가까울수록 빠르고 깊게 깜빡인다
+        const beat = Math.sin(this.time * (7 + near * 24));
+        this.flick = beat > 0 ? Math.pow(beat, 3) * (0.30 + near * 0.62) : 0;
+        Snd.setDirge(near);
+        return;
+      }
 
-      const near = arrived ? 1 : U.clamp(1 - d / 190, 0, 1);
-      // 가까울수록 빠르고 깊게 깜빡인다
-      const beat = Math.sin(this.time * (7 + near * 24));
-      this.flick = beat > 0 ? Math.pow(beat, 3) * (0.30 + near * 0.62) : 0;
-      Snd.setDirge(near);
-
-      if (F.arriveT > 1.1) this.death('found');
+      F.arriveT = (F.arriveT || 0) + dt;
+      this.doorBeat(F, F.arriveT);
       return;
     }
 
@@ -837,6 +895,52 @@ const Game = {
       F.flowT = 0;
     }
     if (F.lostT > this.PROWL_T) this.dropFigure(true);
+  },
+
+  /* 문 앞에 선 뒤의 세 박자.
+     예전에는 도착하고 1.1초 뒤에 그냥 죽었다. 가장 무서워야 할 구간이
+     제일 부실했다 — 문 너머에 무언가 서 있다는 사실 자체가 연출인데
+     그 시간을 안 준 것이다. 셋으로 쪼갠다.
+
+       1) 긁는다  — 명멸이 가장 빠르고 깊다. 아직 소리가 있다.
+       2) 정 적   — 소리도 명멸도 전부 걷어낸다. 손전등은 실오라기만 남는다.
+                    여기서 아무 일도 일어나지 않는 것이 이 연출의 전부다.
+                    사람은 소리가 커질 때가 아니라 갑자기 사라질 때 숨을 참는다.
+       3) 손잡이 — 정적 속에서 딸깍 한 번. 다음이 무엇인지 알려 주는 유일한 신호.
+
+     길이는 전부 고정값이다. 판마다 달라지면 두 번째 판부터 박자를 못 읽는다. */
+  DOOR_SCRATCH: 1.05,
+  DOOR_HUSH: 1.25,
+  DOOR_KNOB: 0.55,
+
+  doorBeat(F, a) {
+    const t1 = this.DOOR_SCRATCH, t2 = t1 + this.DOOR_HUSH, t3 = t2 + this.DOOR_KNOB;
+
+    if (a < t1) {
+      const beat = Math.sin(this.time * 31);
+      this.flick = beat > 0 ? Math.pow(beat, 3) * 0.92 : 0;
+      Snd.setDirge(1);
+      if (!F.scratched) { F.scratched = true; Snd.scratch(); }
+      return;
+    }
+
+    if (a < t2) {
+      if (!F.hushed) {
+        F.hushed = true;
+        Snd.stopDirge();
+        Snd.hush(0.30);
+      }
+      this.flick = 0;               // 깜빡임도 멎는다. 화면이 죽은 듯 고요해진다.
+      return;
+    }
+
+    if (a < t3) {
+      if (!F.knobbed) { F.knobbed = true; Snd.unhush(0.01); Snd.knob(); Snd.hush(0.5); }
+      this.flick = 0;
+      return;
+    }
+
+    this.death('found');
   },
 
   /* 마지막으로 본 자리 주변에서 어슬렁거릴 지점 하나 */
@@ -950,8 +1054,7 @@ const Game = {
     if (F && F.mode === 'chase') {
       F.lostT = 0;
       F.prowlT = 0; F.prowlTo = null;
-      const d = U.dist(this.player.x + 4, this.player.y + 4, F.x, F.y);
-      if (d < this.SEEN_D) {
+      if (this.figSees(F, this.player.x + 4, this.player.y + 4)) {
         // 보고 있는 앞에서 들어갔다 — 서두르지 않는다. 어디로 들어갔는지 알고 있으니까.
         this.spotted(F, TXT('fig.sawMe'));
         return;
@@ -970,11 +1073,15 @@ const Game = {
         U.dist(this.player.x + 4, this.player.y + 4, F.x, F.y) < 40) this.death('caught');
   },
 
-  /* ---------------- 죽음 ---------------- */
+  /* ---------------- 죽음 ----------------
+     두 가지는 끝맺음이 다르다.
+       caught — 쫓기다 따라잡혔다. 어깨에 손이 닿는다. 조용히 끝난다.
+       found  — 숨은 문이 밖에서 열렸다. 여기만 놀래킨다.
+     같은 연출을 두 곳에 쓰면 둘 다 값이 떨어진다. 놀래키는 것은 한 곳뿐이라
+     의미가 있고, 그 한 곳도 앞에 2.85초의 정적을 깔았기 때문에 성립한다. */
   death(kind) {
     if (this.state !== 'play') return;
     const found = kind === 'found';
-    this.state = 'dead';
     this.locked = true;
     this.hiding = null;
     this.searchT = 0;
@@ -984,25 +1091,65 @@ const Game = {
     Narrator.clearFlash();
     Snd.stopChase();
     Snd.stopBells();
+    Snd.stopDirge();
+    this.chaseProx = 0;
+
+    if (found) { this.startJumpscare(); return; }
+
+    this.state = 'dead';
     Snd.sting();
     Snd.thump(0.15, 0.9);
     Snd.setAmbience(0.25, 1.2);
-    // 문이 열리는 순간까지는 기괴한 음이 깔려 있다가, 열리면서 끊긴다
-    if (found) { Snd.creak(0.9); setTimeout(() => Snd.stopDirge(), 900); }
-    else Snd.stopDirge();
 
     // 그것을 눈앞에 세운다
     const P = this.player;
     this.figure = this.newFigure(P.x + 4, P.y + 12, 'inside');
     this.figure.t = 1e9;
-    this.chaseProx = 0;
-
-    const line = TXT(found ? 'death.found' : 'death.caught');
 
     this.setTimeline([
-      { at: 0.3, fn: () => Narrator.say([line]) },
+      { at: 0.3, fn: () => Narrator.say([TXT('death.caught')]) },
       { at: 3.0, fn: () => { this.fadeTo(0, 2.0); } },
       { at: 5.4, fn: () => Narrator.say([TXT('death.again')], () => this.restartRun()) }
+    ]);
+  },
+
+  /* ---------------- 점프스케어 ----------------
+     문이 열리고 얼굴이 화면을 가득 채운다. 1.45초.
+     이 게임에서 유일하게 화면을 때리는 구간이라 규칙을 몇 개 지킨다.
+       · 앞의 정적과 붙어 있을 때만 쓴다. 따로 떼면 그냥 시끄러운 화면이다.
+       · 얼굴은 계속 다가온다. 첫 프레임에 제일 크면 그 뒤로는 잦아들기만 한다.
+       · 스트로브는 앞의 0.55초만. 계속 뒤집으면 눈이 적응해서 무늬가 된다.
+       · 끝나면 통째로 암전. 여운을 화면에 남기지 않고 소리와 문장으로만 남긴다. */
+  JUMP_T: 1.45,
+
+  startJumpscare() {
+    this.state = 'jump';
+    this.jump = { t: 0, seed: Math.random() };
+    this.figure = null;
+    this.shake = 1;
+    this.tl = [];
+    Snd.scream();
+  },
+
+  updJump(dt) {
+    const J = this.jump;
+    J.t += dt;
+    // 끝까지 흔든다. draw 쪽에서 shake 를 매 프레임 깎으므로 여기서 다시 채운다.
+    this.shake = Math.max(this.shake, 1 - (J.t / this.JUMP_T) * 0.45);
+    if (J.t >= this.JUMP_T) this.afterJump();
+  },
+
+  /* 암전된 채로 문장만 남는다 */
+  afterJump() {
+    this.state = 'dead';
+    this.jump = null;
+    this.shake = 0;
+    this.fade = 0;
+    this.figure = null;
+    Snd.setAmbience(0.25, 2.4);
+    this.setTimeline([
+      { at: 1.1, fn: () => Narrator.say([TXT('death.found')]) },
+      { at: 4.4, fn: () => Narrator.say([TXT('death.again')], () => this.restartRun()) }
     ]);
   },
 
@@ -1019,8 +1166,18 @@ const Game = {
   /* 손전등 : 꺼졌다 깜빡이며 돌아오는 구간 / 숨어 있는 동안은 문틈만큼 */
   torchScale() {
     if (this.state === 'dead') return Math.max(0.1, 1 - this.tlT * 0.55);
-    // 들킨 뒤에는 문틈마저 좁아진다
-    if (this.hiding) return (this.figure && this.figure.hunt) ? 0.21 : 0.3;
+    if (this.hiding) {
+      const F = this.figure;
+      if (!F || !F.hunt) return 0.3;
+      // 문 앞에 선 뒤로는 문틈이 박자에 맞춰 닫힌다.
+      // 정적 구간에서는 거의 아무것도 안 보인다 — 귀만 남는다.
+      const a = F.arriveT || 0;
+      if (a <= 0) return 0.21;
+      const t1 = this.DOOR_SCRATCH, t2 = t1 + this.DOOR_HUSH;
+      if (a < t1) return U.lerp(0.21, 0.13, a / t1);
+      if (a < t2) return U.lerp(0.13, 0.05, (a - t1) / this.DOOR_HUSH);
+      return 0.05;
+    }
 
     let s = 1;
     const t = this.torchOutT;
@@ -1159,6 +1316,7 @@ const Game = {
   draw() {
     R.clear(0);
     if (this.state === 'title' || !this.map) { R.present([], 0, 0); return; }
+    if (this.state === 'jump') { this.drawJump(); return; }
 
     // 그것이 가까이서 발을 딛으면 바닥이 울린다. 제곱으로 깎아 딛는 순간만
     // 튀고 곧바로 가라앉게 한다 — 길게 끌면 지진이지 발소리가 아니다.
@@ -1303,6 +1461,43 @@ const Game = {
     // 바닥은 crush 임계값 아래라 완전한 검정으로 남는다 — 멀리 구조물 윤곽만 보이는 상태.
     // 들킨 채 숨어 있는 동안에는 화면 전체가 명멸한다.
     R.present(lights, this.fade * (1 - this.flick), 0.032 + this.flick * 0.06, 0.05);
+  },
+
+  /* 화면을 가득 채우는 얼굴.
+     손전등도 카메라도 쓰지 않는다 — ambient 1 로 넘겨 버퍼를 그대로 띄운다.
+     여기서만 게임 화면의 규칙(빛이 닿는 곳만 보인다)이 깨진다. 그것이 요점이다. */
+  drawJump() {
+    const J = this.jump, t = J.t;
+    const p = U.clamp(t / this.JUMP_T, 0, 1);
+
+    // 첫 두 프레임은 순백. 눈이 적응하기 전에 화면을 통째로 갈아치운다.
+    if (t < 0.05) { R.clear(1); R.present([], 1, 0, 1); return; }
+
+    // 배경은 밝게 둔다. 얼굴이 검은 덩어리라 뒤가 어두우면 형태가 안 읽힌다.
+    R.clear(0.74 + Math.sin(t * 53) * 0.14);
+
+    // 다가온다. 끝에는 화면 밖으로 넘친다. 33x25 격자 기준 sc 14.6 에서 폭이 꽉 찬다.
+    const sc = U.lerp(9.5, 18, p * p);
+    const seed = J.seed;
+    // 줄을 묶어 통째로 민다. 1/24초 동안 붙들어야 흔들림이지 끓어오름이 아니다.
+    const tick = Math.floor(t * 24);
+    const jitter = dy => {
+      const n = Math.sin((((dy / 9) | 0) * 7.13 + tick * 3.7 + seed * 61) * 12.9898) * 43758.5453;
+      const r = n - Math.floor(n);
+      // 대부분의 띠는 제자리에 둔다. 전부 흔들면 형태가 뭉개져 얼굴이 사라진다.
+      if (r > 0.24 && r < 0.76) return 0;
+      return Math.round((r - 0.5) * 2 * (10 + p * 26));
+    };
+
+    const s = this.shake;
+    const cx = R.W / 2 + Math.sin(t * 87) * 14 * s;
+    const cy = R.H * 0.52 + Math.cos(t * 113) * 9 * s;
+    // fill 0 — 머리 속을 검게 메운다. 안 메우면 윤곽선만 남아 철사 그림이 된다.
+    R.spriteZoom(SPR.FACE, cx, cy, sc, jitter, 1, 0);
+
+    if (t < 0.55 && (((t * 26) | 0) & 1)) R.invert();
+
+    R.present([], 1, 0.07 + (1 - p) * 0.06, 1);
   }
 };
 

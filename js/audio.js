@@ -883,6 +883,147 @@ const Snd = {
     if (this.amb) this.setAmbience(1 + this.dread * 0.035, 3);
   },
 
+  /* ---------------- 정적 ----------------
+     문 앞에서 모든 소리를 걷어낸다. 개별 소스를 하나씩 끄는 대신 master 를
+     내린다 — 그 순간 무엇이 울리고 있든 확실히 멎는다.
+     드론도 종도 숨소리도 없는 완전한 무음이 잠깐 필요하고, 그 무음이
+     바로 다음에 오는 것의 크기를 만든다. */
+  hush(time = 0.35) {
+    if (!this.ctx) return;
+    this.stopBells();
+    const t = this.ctx.currentTime;
+    this.master.gain.cancelScheduledValues(t);
+    this.master.gain.setValueAtTime(this.master.gain.value, t);
+    this.master.gain.linearRampToValueAtTime(0.0001, t + time);
+  },
+
+  unhush(time = 0.01) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.master.gain.cancelScheduledValues(t);
+    this.master.gain.setValueAtTime(this.master.gain.value, t);
+    this.master.gain.linearRampToValueAtTime(0.85, t + time);
+  },
+
+  /* 문 바깥면을 손톱으로 긁는다.
+     한 번에 죽 긋지 않는다 — 짧게 끊기는 마찰음을 불규칙한 간격으로 쌓아야
+     쇠나 나무가 아니라 '무언가가 긁고 있다' 로 들린다. 거의 dry 로 낸다.
+     문 하나 너머지 방 건너편이 아니다. */
+  scratch() {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t0 = ctx.currentTime;
+    let t = t0;
+    for (let i = 0; i < 11; i++) {
+      const dur = U.rand(0.035, 0.085);
+      const ns = ctx.createBufferSource(); ns.buffer = this._noise(dur + 0.02);
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass'; f.Q.value = 2.4;
+      // 아래로 긁어 내려간다
+      f.frequency.setValueAtTime(2600 - i * 130 + U.rand(-260, 260), t);
+      f.frequency.exponentialRampToValueAtTime(Math.max(300, 1500 - i * 90), t + dur);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(U.rand(0.05, 0.10), t + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      ns.connect(f); f.connect(g);
+      this._out(g, 0.95, 0.10);
+      ns.start(t);
+      t += dur + U.rand(0.012, 0.055);
+    }
+  },
+
+  /* 손잡이가 조금 돌아갔다 멈춘다. 아주 작게 — 정적 속에서 이것 하나만 들린다. */
+  knob() {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    for (let i = 0; i < 3; i++) {
+      const tt = t + i * 0.085;
+      const o = ctx.createOscillator(); o.type = 'square';
+      o.frequency.setValueAtTime(1400 + i * 180, tt);
+      o.frequency.exponentialRampToValueAtTime(520, tt + 0.03);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, tt);
+      g.gain.exponentialRampToValueAtTime(0.030, tt + 0.003);
+      g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.055);
+      o.connect(g);
+      this._out(g, 1.0, 0.06);
+      o.start(tt); o.stop(tt + 0.07);
+    }
+  },
+
+  /* ---------------- 점프스케어 ----------------
+     이 게임에서 유일하게 크게 때리는 소리다. 옷장 문이 열리는 순간에만 쓴다.
+     앞의 정적이 없으면 그냥 시끄러운 잡음이므로 hush() 와 반드시 짝으로 쓴다.
+       · 서브가 바닥을 빼고
+       · 조율되지 않은 고음 덩어리가 한꺼번에 들어오고
+       · 그 위를 긁는 잡음이 덮는다
+     잔향은 거의 주지 않는다. 멀리서 울리면 안 된다 — 얼굴 앞이다. */
+  scream() {
+    if (!this.ctx) return;
+    this.unhush(0.005);
+    const ctx = this.ctx, t = ctx.currentTime;
+
+    // 바닥이 꺼지는 서브
+    const sub = ctx.createOscillator(); sub.type = 'sine';
+    sub.frequency.setValueAtTime(150, t);
+    sub.frequency.exponentialRampToValueAtTime(27, t + 1.1);
+    const sg = ctx.createGain();
+    sg.gain.setValueAtTime(0.0001, t);
+    sg.gain.exponentialRampToValueAtTime(0.62, t + 0.004);
+    sg.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+    sub.connect(sg);
+    this._out(sg, 1.0, 0.12);
+    sub.start(t); sub.stop(t + 1.5);
+
+    // 서로 어긋난 고음 덩어리. 화음이 되면 안 되므로 전부 불협으로 고른다.
+    [196, 207.7, 277.2, 415.3, 587.3].forEach((f, i) => {
+      const o = ctx.createOscillator(); o.type = 'sawtooth';
+      o.frequency.setValueAtTime(f * U.rand(0.99, 1.01), t);
+      o.frequency.linearRampToValueAtTime(f * 0.72, t + 1.2);
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'lowpass'; bp.frequency.value = 3200; bp.Q.value = 1;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.11, t + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 1.0 + i * 0.06);
+      o.connect(bp); bp.connect(g);
+      this._out(g, 0.9, 0.18);
+      o.start(t); o.stop(t + 1.3);
+    });
+
+    // 위로 찢고 올라가는 비명 — 배음이 갈라지도록 살짝 떨어 준다
+    const scr = ctx.createOscillator(); scr.type = 'sawtooth';
+    scr.frequency.setValueAtTime(760, t);
+    scr.frequency.exponentialRampToValueAtTime(2450, t + 0.28);
+    scr.frequency.exponentialRampToValueAtTime(900, t + 1.0);
+    const vib = ctx.createOscillator(); vib.frequency.value = 23;
+    const vg = ctx.createGain(); vg.gain.value = 150;
+    vib.connect(vg); vg.connect(scr.frequency);
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'bandpass'; hp.frequency.value = 1700; hp.Q.value = 1.4;
+    const scg = ctx.createGain();
+    scg.gain.setValueAtTime(0.0001, t);
+    scg.gain.exponentialRampToValueAtTime(0.16, t + 0.008);
+    scg.gain.exponentialRampToValueAtTime(0.0001, t + 1.1);
+    scr.connect(hp); hp.connect(scg);
+    this._out(scg, 0.85, 0.15);
+    scr.start(t); vib.start(t);
+    scr.stop(t + 1.2); vib.stop(t + 1.2);
+
+    // 전부를 덮는 잡음 파열
+    const ns = ctx.createBufferSource(); ns.buffer = this._noise(0.9);
+    const nf = ctx.createBiquadFilter();
+    nf.type = 'bandpass'; nf.Q.value = 0.7;
+    nf.frequency.setValueAtTime(3000, t);
+    nf.frequency.exponentialRampToValueAtTime(340, t + 0.8);
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.34, t);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.85);
+    ns.connect(nf); nf.connect(ng);
+    this._out(ng, 0.9, 0.2);
+    ns.start(t);
+  },
+
   /* 엔딩용 : 부드럽게 해소되는 화음 */
   resolve() {
     if (!this.ctx) return;

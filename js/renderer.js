@@ -135,6 +135,72 @@ const R = {
     }
   },
 
+  /* 스프라이트를 실수배로 확대해 (cx,cy) 를 중심으로 그린다 (최근접 확대).
+     화면을 가득 채울 만큼 키우는 용도라 blit 처럼 타일 단위가 아니다.
+
+       jitter(확대된 줄 번호) → 그 줄을 가로로 민 픽셀 수. 확대한 채로 찢는다.
+       fill                   → 줄마다 가장 왼쪽/오른쪽 불투명 픽셀 사이를 이 값으로
+                                먼저 메운다. 그것의 머리는 윤곽선만 있고 속이 비어
+                                있어서, 안 메우면 확대했을 때 배경이 그대로 비쳐
+                                철사 그림이 된다. 메워야 검은 덩어리로 읽힌다. */
+  spriteZoom(data, cx, cy, sc, jitter, mul = 1, fill = null) {
+    const h = data.length, w = data[0].length, S = this.SHADE;
+    const W = this.W, H = this.H, lum = this.lum;
+    const dw = Math.round(w * sc), dh = Math.round(h * sc);
+    const x0 = Math.round(cx - dw / 2), y0 = Math.round(cy - dh / 2);
+
+    // 줄마다 불투명 구간의 양 끝
+    let span = null;
+    if (fill !== null) {
+      span = [];
+      for (let sy = 0; sy < h; sy++) {
+        const row = data[sy];
+        let lo = -1, hi = -1;
+        for (let sx = 0; sx < w; sx++) {
+          if (row[sx] === '.' || row[sx] === undefined) continue;
+          if (lo < 0) lo = sx;
+          hi = sx;
+        }
+        span.push([lo, hi]);
+      }
+    }
+
+    for (let dy = 0; dy < dh; dy++) {
+      const py = y0 + dy;
+      if (py < 0 || py >= H) continue;
+      const sy = (dy / sc) | 0;
+      const row = data[sy];
+      if (!row) continue;
+      const sh = jitter ? jitter(dy) : 0;
+      const base = py * W;
+
+      if (span) {
+        const [lo, hi] = span[sy];
+        if (lo >= 0) {
+          const a = Math.max(0, Math.round(x0 + lo * sc) + sh);
+          const b = Math.min(W, Math.round(x0 + (hi + 1) * sc) + sh);
+          for (let px = a; px < b; px++) lum[px + base] = fill;
+        }
+      }
+
+      for (let dx = 0; dx < dw; dx++) {
+        const px = x0 + dx + sh;
+        if (px < 0 || px >= W) continue;
+        const c = row[(dx / sc) | 0];
+        if (c === '.' || c === undefined) continue;
+        const v = S[c];
+        if (v === undefined) continue;
+        lum[px + base] = v * mul;
+      }
+    }
+  },
+
+  /* 화면 전체를 반전한다 — 점프스케어의 스트로브 */
+  invert() {
+    const l = this.lum;
+    for (let i = 0; i < l.length; i++) l[i] = 1 - l[i];
+  },
+
   /* 둘레의 빛을 먹는다 — 그것이 선 자리는 오히려 어두워진다.
      광원을 주면 자기 위치를 알리는 표시등이 되므로 반대로 눌러 놓는다.
      lum 을 직접 깎으므로 present() 의 광원 곱셈을 거쳐도 어둠이 남는다. */

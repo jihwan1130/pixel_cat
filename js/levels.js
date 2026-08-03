@@ -14,6 +14,10 @@ const TT = {
 const TT_NAME = ['void', 'wall', 'floor', 'grass', 'water', 'curb', 'fence', 'door', 'window',
                  'gate', 'gateOpen'];
 const TT_WALK = [0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1];
+/* 시선이 통과하는가. 걸을 수 있는가와 다르다 —
+   연못은 건너지 못해도 건너편이 보이고, 철망과 철문은 살 사이로 비친다.
+   막는 것은 실제로 시야를 가리는 구조물뿐이다 : 벽 · 창(어둡다) · 문 · 바깥(void). */
+const TT_SEE = [0, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1];
 
 const LEVEL_DEF = {
 
@@ -440,6 +444,47 @@ const Levels = {
   walkTile(map, tx, ty) {
     if (tx < 0 || ty < 0 || tx >= map.W || ty >= map.H) return false;
     return !!TT_WALK[map.grid[ty][tx]];
+  },
+
+  /* 이 칸이 시선을 막는가 */
+  opaque(map, tx, ty) {
+    if (tx < 0 || ty < 0 || tx >= map.W || ty >= map.H) return true;
+    return !TT_SEE[map.grid[ty][tx]];
+  },
+
+  /* 두 점 사이에 시선이 통하는가 (픽셀 좌표).
+     격자를 칸 단위로 훑는 amanatides-woo 방식. 지나가는 칸만 검사하므로
+     대각선으로 벽 모서리를 스쳐 지나가는 일이 없다.
+
+     소품(상자·드럼통·가로등)은 막지 않는다. 막게 해 보았더니 골목에서
+     드럼통 하나 뒤에 서기만 해도 안 보이게 되어, 어디가 안전한지 눈으로
+     읽을 수 없는 판이 됐다. 시야를 끊는 것은 벽처럼 눈에 확실히 보이는
+     구조물뿐이어야 플레이어가 계획을 세울 수 있다. */
+  sees(map, ax, ay, bx, by) {
+    const T = this.T;
+    let tx = Math.floor(ax / T), ty = Math.floor(ay / T);
+    const ex = Math.floor(bx / T), ey = Math.floor(by / T);
+    if (this.opaque(map, tx, ty) || this.opaque(map, ex, ey)) return false;
+    if (tx === ex && ty === ey) return true;
+
+    const dx = bx - ax, dy = by - ay;
+    const sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1;
+    // 한 칸을 가로지르는 데 드는 t(0~1) 와, 다음 칸 경계에 닿는 t
+    const tdx = dx === 0 ? Infinity : Math.abs(T / dx);
+    const tdy = dy === 0 ? Infinity : Math.abs(T / dy);
+    let tmx = dx === 0 ? Infinity
+      : (dx > 0 ? (tx + 1) * T - ax : ax - tx * T) / Math.abs(dx);
+    let tmy = dy === 0 ? Infinity
+      : (dy > 0 ? (ty + 1) * T - ay : ay - ty * T) / Math.abs(dy);
+
+    for (let i = 0; i < 1024; i++) {
+      // 다음 칸에 들어서는 지점이 끝점 너머면 더 볼 것이 없다
+      if (Math.min(tmx, tmy) > 1) return true;
+      if (tmx < tmy) { tx += sx; tmx += tdx; } else { ty += sy; tmy += tdy; }
+      if (tx === ex && ty === ey) return true;
+      if (this.opaque(map, tx, ty)) return false;
+    }
+    return true;
   },
 
   /* 이웃 마스크 : 1=위 2=오른쪽 4=아래 8=왼쪽 이 열린 칸 */

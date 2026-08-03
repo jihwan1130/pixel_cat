@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>그것의 시야 — 숨기 판정 구조</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    color: #d8d8d8;
+    font-family: "Nanum Gothic Coding", "D2Coding", "Consolas", "맑은 고딕", "Malgun Gothic", monospace;
+    padding: 28px 20px 60px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { width: 100%; max-width: 1180px; }
+
+  h1 {
+    font-size: 17px; font-weight: 400;
+    letter-spacing: .42em; text-indent: .42em;
+    text-shadow: 0 0 22px rgba(255,255,255,.28);
+  }
+  .lede { margin-top: 10px; font-size: 12.5px; line-height: 1.85; color: #8e8e8e; letter-spacing: .02em; }
+  .lede b { color: #e8e8e8; font-weight: 400; }
+
+  /* --- 규칙 세 줄 --- */
+  .rules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 18px; }
+  .rule {
+    border: 1px solid #232323; padding: 12px 14px;
+    font-size: 12px; line-height: 1.75; color: #9a9a9a;
+    background: linear-gradient(180deg, #0b0b0b, #050505);
+  }
+  .rule .tag { display: block; font-size: 10.5px; letter-spacing: .22em; margin-bottom: 6px; }
+  .rule.no  .tag { color: #6d6d6d; }
+  .rule.yes .tag { color: #fff; text-shadow: 0 0 14px rgba(255,255,255,.5); }
+  .rule b { color: #dcdcdc; font-weight: 400; }
+
+  /* --- 캔버스 --- */
+  .stage {
+    margin-top: 18px; position: relative; border: 1px solid #1e1e1e; background: #000;
+    display: flex; justify-content: center;
+  }
+  /* 지도는 정확히 2:1 이다. 높이를 화면에 맞춰 잡고 폭을 따라가게 둔다 —
+     안 그러면 캔버스가 화면을 넘겨서 판정 패널이 접힌다. */
+  canvas {
+    display: block; width: min(100%, 108vh); height: auto;
+    image-rendering: pixelated; cursor: crosshair;
+  }
+
+  /* --- 판정 --- */
+  .verdict {
+    margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px;
+    border: 1px solid #232323; padding: 14px 16px; background: #070707;
+  }
+  .big { font-size: 20px; letter-spacing: .3em; text-indent: .3em; min-width: 6.5em; }
+  .big.seen   { color: #fff; text-shadow: 0 0 20px rgba(255,255,255,.55); }
+  .big.unseen { color: #5f5f5f; }
+  .why { font-size: 12.5px; color: #9a9a9a; letter-spacing: .02em; }
+  .nums { margin-left: auto; font-size: 11.5px; color: #6f6f6f; display: flex; gap: 18px; flex-wrap: wrap; }
+  .nums span b { color: #c4c4c4; font-weight: 400; }
+
+  /* --- 조작 --- */
+  .ctrls { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: center; }
+  .presets { display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    appearance: none; background: none; color: #8a8a8a;
+    border: 1px solid #2a2a2a; padding: 7px 13px;
+    font: inherit; font-size: 11.5px; letter-spacing: .12em; cursor: pointer;
+    transition: color .18s, border-color .18s, background .18s;
+  }
+  button:hover { color: #eee; border-color: #555; background: #101010; }
+  button.on { color: #fff; border-color: #7a7a7a; background: #151515; }
+  label { font-size: 11.5px; color: #7a7a7a; letter-spacing: .1em; display: flex; align-items: center; gap: 9px; }
+  input[type=range] { width: 132px; accent-color: #cfcfcf; }
+  label i { font-style: normal; color: #d0d0d0; min-width: 3.6em; }
+
+  .legend { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 11.5px; color: #6f6f6f; }
+  .legend i { display: inline-block; width: 22px; height: 10px; margin-right: 8px; vertical-align: -1px; border: 1px solid #333; }
+  .hint { margin-top: 14px; font-size: 11.5px; color: #5c5c5c; line-height: 1.9; }
+  code { color: #b9b9b9; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>그것의 시야</h1>
+  <p class="lede">
+    옷장·드럼통·상자에 숨을 때, <b>들어가는 것을 봤는가</b>로만 판정한다. 한 번 보면 끝까지 찾아오고, 못 보면 무슨 짓을 해도 못 찾는다.<br>
+    예전에는 그 판정이 <b>거리 하나</b>였다. 벽 하나 끼고 코앞에서 들어가도 들켰고, 훤히 뚫린 복도 저 끝에서 들어가면 안 들켰다 — 보이는 것과 반대라 규칙을 학습할 수 없었다.<br>
+    지금은 손전등과 같은 구조다. <b>향한 쪽으로 부채꼴이 열리고, 그 안에서도 시선이 실제로 닿아야 본다.</b>
+  </p>
+
+  <div class="rules">
+    <div class="rule no">
+      <span class="tag">사 각</span>
+      부채꼴 <b>밖</b>이면 아무리 가까워도 못 본다. 등 뒤 한 칸도 안전하다.
+    </div>
+    <div class="rule no">
+      <span class="tag">차 단</span>
+      부채꼴 안이어도 <b>구조물</b>이 가로막으면 못 본다. 모퉁이를 꺾는 것이 곧 숨는 것이다.
+    </div>
+    <div class="rule yes">
+      <span class="tag">직 선</span>
+      부채꼴 안이고 시선이 닿으면 <b>아무리 멀어도</b> 본다. 뻥 뚫린 복도에서는 거리가 소용없다.
+    </div>
+  </div>
+
+  <div class="stage"><canvas id="c"></canvas></div>
+
+  <div class="verdict">
+    <div id="big" class="big">—</div>
+    <div id="why" class="why"></div>
+    <div class="nums">
+      <span>거리 <b id="nd">—</b></span>
+      <span>각도 <b id="na">—</b></span>
+      <span>시선 <b id="nl">—</b></span>
+    </div>
+  </div>
+
+  <div class="ctrls">
+    <div class="presets">
+      <button data-case="0">직선 — 멀어도 보인다</button>
+      <button data-case="1">차단 — 벽 너머</button>
+      <button data-case="2">사각 — 등 뒤</button>
+    </div>
+    <label>시야각 <input id="fov" type="range" min="20" max="90" step="1"><i id="fovv"></i></label>
+    <label>사거리 <input id="rng" type="range" min="80" max="700" step="10"><i id="rngv"></i></label>
+  </div>
+
+  <div class="legend">
+    <span><i style="background:#4a4a4a"></i>부채꼴 — 실제로 보이는 범위</span>
+    <span><i style="background:#c8c8c8"></i>그것 · 향한 쪽</span>
+    <span><i style="background:#000"></i>숨은 자리</span>
+    <span><i style="background:#6a6a6a"></i>벽 — 시선을 막는다</span>
+  </div>
+
+  <p class="hint">
+    <code>그것</code>과 <code>방향 손잡이</code>와 <code>숨은 자리</code>를 끌어서 옮길 수 있다. 빈 곳을 누르면 숨은 자리가 그리로 간다.<br>
+    부채꼴이 벽에 잘려 나가는 모양이 곧 판정 그대로다 — 이 그림에서 어두운 곳이 게임에서 안전한 곳이다.<br>
+    물과 철망과 철문 살은 시선을 통과시킨다. 막는 것은 벽 · 창 · 문 · 바깥뿐이다(<code>TT_SEE</code>).
+  </p>
+</div>
+
+<script>
+/* -------------------------------------------------------------------------
+   판정 로직은 게임과 같다.
+     각도  : js/game.js  Game.figSees()
+     시선  : js/levels.js Levels.sees()  — 칸 단위 DDA
+   숫자를 바꾸려면 양쪽을 같이 바꿔야 한다.
+------------------------------------------------------------------------- */
+const T = 16, K = 1.15;                 // 칸 크기 / 화면 종횡비(렌더러 광원과 같은 값)
+let FOV = 58, VIEW = 460;               // Game.FIG_FOV / Game.FIG_VIEW_D
+
+/* '#' 벽(시선 차단) · '.' 바닥 · '~' 물(시선 통과) */
+const MAP = [
+  '####################################',
+  '#..................................#',
+  '#..................................#',
+  '#..................................#',
+  '#.....######.........########......#',
+  '#.....######.........########......#',
+  '#..................................#',
+  '#..................................#',
+  '#..................................#',
+  '##########.#########################',
+  '#........#.........................#',
+  '#........#.........................#',
+  '#...................~~~~~~.........#',
+  '#........#..........~~~~~~.........#',
+  '##########.........................#',
+  '#..................................#',
+  '#..................................#',
+  '####################################'
+];
+const MW = MAP[0].length, MH = MAP.length;
+const opaque = (tx, ty) =>
+  tx < 0 || ty < 0 || tx >= MW || ty >= MH ? true : MAP[ty][tx] === '#';
+
+/* --- 시선 : 지나가는 칸만 훑는다. 대각선으로 모서리를 스쳐 통과하지 않는다. --- */
+function sees(ax, ay, bx, by) {
+  let tx = Math.floor(ax / T), ty = Math.floor(ay / T);
+  const ex = Math.floor(bx / T), ey = Math.floor(by / T);
+  if (opaque(tx, ty) || opaque(ex, ey)) return false;
+  if (tx === ex && ty === ey) return true;
+  const dx = bx - ax, dy = by - ay;
+  const sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1;
+  const tdx = dx === 0 ? Infinity : Math.abs(T / dx);
+  const tdy = dy === 0 ? Infinity : Math.abs(T / dy);
+  let tmx = dx === 0 ? Infinity : (dx > 0 ? (tx + 1) * T - ax : ax - tx * T) / Math.abs(dx);
+  let tmy = dy === 0 ? Infinity : (dy > 0 ? (ty + 1) * T - ay : ay - ty * T) / Math.abs(dy);
+  for (let i = 0; i < 1024; i++) {
+    if (Math.min(tmx, tmy) > 1) return true;
+    if (tmx < tmy) { tx += sx; tmx += tdx; } else { ty += sy; tmy += tdy; }
+    if (tx === ex && ty === ey) return true;
+    if (opaque(tx, ty)) return false;
+  }
+  return true;
+}
+
+/* --- 각도 : 방향과 상대 위치를 같은(눌린) 공간에서 잰다 --- */
+function angleTo(F, x, y) {
+  const ax = x - F.x, ay = (y - F.y) * K;
+  const bx = F.dx, by = F.dy * K;
+  const c = (ax * bx + ay * by) / ((Math.hypot(ax, ay) * Math.hypot(bx, by)) || 1);
+  return Math.acos(Math.max(-1, Math.min(1, c))) * 180 / Math.PI;
+}
+
+/* --- 판정 : 사거리 → 부채꼴 → 시선. 게임과 순서까지 같다. --- */
+function judge(F, S) {
+  const d = Math.hypot(S.x - F.x, S.y - F.y);
+  const a = angleTo(F, S.x, S.y);
+  const los = sees(F.x, F.y, S.x, S.y);
+  let verdict = 'seen', why = '부채꼴 안이고 시선이 닿는다 — 거리와 상관없이 본다.';
+  if (d > VIEW)        { verdict = 'range';  why = '사거리 밖. 이 너머는 어두워서 보이지 않는다.'; }
+  else if (a > FOV)    { verdict = 'fov';    why = '부채꼴 밖 — 바로 옆이어도 시야에 들어오지 않는다.'; }
+  else if (!los)       { verdict = 'blocked';why = '구조물이 시선을 끊는다 — 부채꼴 안이지만 못 본다.'; }
+  return { d, a, los, verdict, why };
+}
+
+/* ------------------------------------------------------------------ */
+const F = { x: 16 * T + 8, y: 7 * T + 8, dx: 1, dy: 0 };
+const S = { x: 32 * T + 8, y: 7 * T + 8 };
+
+const CASES = [
+  { s: [32, 7],  f: [16, 7], d: [1, 0] },
+  { s: [32, 2],  f: [16, 7], d: [1, 0] },
+  { s: [13, 7],  f: [16, 7], d: [1, 0] }
+];
+
+const SC = 2;                                   // 화면 배율
+const cv = document.getElementById('c');
+cv.width = MW * T * SC; cv.height = MH * T * SC;
+const g = cv.getContext('2d');
+
+/* 부채꼴의 실제 모양 : 광선을 부채꼴 전체에 쏘아 벽에 닿는 지점을 잇는다.
+   눌린 공간에서 각도를 고르고, 화면 공간으로 되돌려 나아간다 —
+   그래야 그려진 모양과 judge() 의 각도 판정이 정확히 같아진다. */
+function coneShape() {
+  const a0 = Math.atan2(F.dy * K, F.dx);
+  const half = FOV * Math.PI / 180;
+  const N = 260, pts = [];
+  for (let i = 0; i <= N; i++) {
+    const a = a0 + (i / N - 0.5) * 2 * half;
+    let ux = Math.cos(a), uy = Math.sin(a) / K;
+    const ul = Math.hypot(ux, uy); ux /= ul; uy /= ul;
+    let r = 0;
+    while (r < VIEW) {
+      const nr = Math.min(r + 2, VIEW);
+      if (opaque(Math.floor((F.x + ux * nr) / T), Math.floor((F.y + uy * nr) / T))) break;
+      r = nr;
+    }
+    pts.push([F.x + ux * r, F.y + uy * r]);
+  }
+  return pts;
+}
+
+function drawMap() {
+  for (let ty = 0; ty < MH; ty++) {
+    for (let tx = 0; tx < MW; tx++) {
+      const c = MAP[ty][tx];
+      const x = tx * T * SC, y = ty * T * SC, s = T * SC;
+      if (c === '#') {
+        g.fillStyle = '#151515'; g.fillRect(x, y, s, s);
+        // 벽면에 결을 준다 — 게임의 석조/입면과 같은 인상
+        g.fillStyle = '#242424';
+        for (let i = 2; i < s; i += 6) g.fillRect(x + 1, y + i, s - 2, 1);
+        g.strokeStyle = '#3a3a3a'; g.lineWidth = 1;
+        g.strokeRect(x + .5, y + .5, s - 1, s - 1);
+      } else if (c === '~') {
+        g.fillStyle = '#080c0e'; g.fillRect(x, y, s, s);
+        g.fillStyle = '#1b2429';
+        for (let i = 3; i < s; i += 7) g.fillRect(x + 3, y + i, s - 6, 1);
+      } else {
+        g.fillStyle = '#060606'; g.fillRect(x, y, s, s);
+        g.fillStyle = '#101010'; g.fillRect(x + s / 2 - 1, y + s / 2 - 1, 1, 1);
+      }
+    }
+  }
+}
+
+function drawCone() {
+  const pts = coneShape();
+  const fx = F.x * SC, fy = F.y * SC;
+
+  g.save();
+  g.beginPath();
+  g.moveTo(fx, fy);
+  for (const [px, py] of pts) g.lineTo(px * SC, py * SC);
+  g.closePath();
+  g.clip();
+
+  // 손전등처럼 가운데가 밝고 바깥에서 급히 떨어진다
+  const grd = g.createRadialGradient(fx, fy, 0, fx, fy, VIEW * SC);
+  grd.addColorStop(0,    'rgba(255,255,255,.30)');
+  grd.addColorStop(0.25, 'rgba(255,255,255,.15)');
+  grd.addColorStop(0.65, 'rgba(255,255,255,.06)');
+  grd.addColorStop(1,    'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, cv.width, cv.height);
+
+  // 부채꼴 안에서만 바닥 격자가 드러난다 — 빛이 닿는 곳만 보이는 게임 규칙 그대로
+  g.strokeStyle = 'rgba(255,255,255,.05)';
+  g.lineWidth = 1;
+  g.beginPath();
+  for (let tx = 0; tx <= MW; tx++) { g.moveTo(tx * T * SC + .5, 0); g.lineTo(tx * T * SC + .5, cv.height); }
+  for (let ty = 0; ty <= MH; ty++) { g.moveTo(0, ty * T * SC + .5); g.lineTo(cv.width, ty * T * SC + .5); }
+  g.stroke();
+  g.restore();
+
+  // 부채꼴의 테두리
+  g.beginPath();
+  g.moveTo(fx, fy);
+  for (const [px, py] of pts) g.lineTo(px * SC, py * SC);
+  g.closePath();
+  g.strokeStyle = 'rgba(255,255,255,.22)';
+  g.lineWidth = 1;
+  g.stroke();
+}
+
+function drawFigure() {
+  const fx = F.x * SC, fy = F.y * SC;
+
+  // 향한 쪽 — 손잡이까지의 축
+  const hx = (F.x + F.dx * 78) * SC, hy = (F.y + F.dy * 78) * SC;
+  g.strokeStyle = 'rgba(255,255,255,.34)';
+  g.setLineDash([4, 4]); g.lineWidth = 1;
+  g.beginPath(); g.moveTo(fx, fy); g.lineTo(hx, hy); g.stroke();
+  g.setLineDash([]);
+
+  // 손잡이
+  g.beginPath(); g.arc(hx, hy, 6, 0, 7);
+  g.fillStyle = '#0a0a0a'; g.fill();
+  g.strokeStyle = '#8e8e8e'; g.lineWidth = 1.5; g.stroke();
+
+  // 그것 — 검은 몸에 밝은 윤곽. 게임에서 그리는 방식과 같다.
+  g.beginPath(); g.arc(fx, fy, 9, 0, 7);
+  g.fillStyle = '#000'; g.fill();
+  g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke();
+  g.beginPath(); g.arc(fx, fy, 15, 0, 7);
+  g.strokeStyle = 'rgba(255,255,255,.18)'; g.lineWidth = 1; g.stroke();
+}
+
+function drawSpot(r) {
+  const sx = S.x * SC, sy = S.y * SC;
+  const seen = r.verdict === 'seen';
+
+  // 시선 — 실제로 닿는지에 따라 실선/점선
+  g.beginPath();
+  g.moveTo(F.x * SC, F.y * SC); g.lineTo(sx, sy);
+  g.strokeStyle = seen ? 'rgba(255,255,255,.75)' : 'rgba(255,255,255,.13)';
+  g.lineWidth = seen ? 2 : 1;
+  if (!seen) g.setLineDash([3, 5]);
+  g.stroke(); g.setLineDash([]);
+
+  // 숨은 자리 — 상자 모양
+  g.beginPath(); g.rect(sx - 10, sy - 10, 20, 20);
+  g.fillStyle = seen ? '#f2f2f2' : '#0b0b0b'; g.fill();
+  g.strokeStyle = seen ? '#fff' : '#6a6a6a'; g.lineWidth = 2; g.stroke();
+  g.beginPath(); g.moveTo(sx - 10, sy - 3); g.lineTo(sx + 10, sy - 3);
+  g.strokeStyle = seen ? '#8a8a8a' : '#3a3a3a'; g.lineWidth = 1.5; g.stroke();
+
+  if (seen) {
+    g.beginPath(); g.rect(sx - 16, sy - 16, 32, 32);
+    g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 1; g.stroke();
+  }
+}
+
+function drawLabels(r) {
+  g.font = '11px Consolas, monospace';
+  g.textAlign = 'center';
+  const sx = S.x * SC, sy = S.y * SC;
+  const seen = r.verdict === 'seen';
+  const txt = seen ? '보 인 다'
+    : r.verdict === 'fov' ? '사 각'
+    : r.verdict === 'blocked' ? '벽  너 머'
+    : '사 거 리  밖';
+  // 화면 아래쪽에 붙으면 글자를 상자 위로 넘긴다
+  const below = sy + 36 < cv.height - 8;
+  const ty = below ? sy + 34 : sy - 24;
+  const w = g.measureText(txt).width + 14;
+  g.fillStyle = 'rgba(0,0,0,.72)';
+  g.fillRect(sx - w / 2, ty - 11, w, 16);
+  g.fillStyle = seen ? '#fff' : '#8d8d8d';
+  g.fillText(txt, sx, ty);
+  g.textAlign = 'left';
+}
+
+function render() {
+  g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height);
+  const r = judge(F, S);
+  drawMap();
+  drawCone();
+  drawSpot(r);
+  drawFigure();
+  drawLabels(r);
+
+  const big = document.getElementById('big');
+  big.textContent = r.verdict === 'seen' ? '보 인 다' : '못  본 다';
+  big.className = 'big ' + (r.verdict === 'seen' ? 'seen' : 'unseen');
+  document.getElementById('why').textContent = r.why;
+  document.getElementById('nd').textContent = Math.round(r.d) + ' px  (' + (r.d / T).toFixed(1) + '칸)';
+  document.getElementById('na').textContent = r.a.toFixed(1) + '°  / ' + FOV + '°';
+  document.getElementById('nl').textContent = r.los ? '닿는다' : '막혔다';
+}
+
+/* ---------------- 조작 ---------------- */
+let drag = null;
+const pos = e => {
+  const b = cv.getBoundingClientRect();
+  return { x: (e.clientX - b.left) / b.width * MW * T, y: (e.clientY - b.top) / b.height * MH * T };
+};
+const near = (p, x, y, r) => Math.hypot(p.x - x, p.y - y) < r;
+
+cv.addEventListener('pointerdown', e => {
+  const p = pos(e);
+  cv.setPointerCapture(e.pointerId);
+  if (near(p, F.x + F.dx * 78, F.y + F.dy * 78, 16)) drag = 'aim';
+  else if (near(p, F.x, F.y, 18)) drag = 'fig';
+  else { drag = 'spot'; S.x = p.x; S.y = p.y; }
+  onDrag(e);
+});
+cv.addEventListener('pointermove', e => { if (drag) onDrag(e); });
+cv.addEventListener('pointerup', () => { drag = null; });
+cv.addEventListener('pointercancel', () => { drag = null; });
+
+function onDrag(e) {
+  const p = pos(e);
+  if (drag === 'aim') {
+    const dx = p.x - F.x, dy = p.y - F.y, l = Math.hypot(dx, dy) || 1;
+    F.dx = dx / l; F.dy = dy / l;
+  } else if (drag === 'fig') { F.x = p.x; F.y = p.y; }
+  else { S.x = p.x; S.y = p.y; }
+  clearCase();
+  render();
+}
+
+function clearCase() {
+  for (const b of document.querySelectorAll('[data-case]')) b.classList.remove('on');
+}
+
+for (const b of document.querySelectorAll('[data-case]')) {
+  b.addEventListener('click', () => {
+    const c = CASES[+b.dataset.case];
+    S.x = c.s[0] * T + 8; S.y = c.s[1] * T + 8;
+    F.x = c.f[0] * T + 8; F.y = c.f[1] * T + 8;
+    F.dx = c.d[0]; F.dy = c.d[1];
+    clearCase(); b.classList.add('on');
+    render();
+  });
+}
+
+const fov = document.getElementById('fov'), rng = document.getElementById('rng');
+fov.value = FOV; rng.value = VIEW;
+const syncLabels = () => {
+  document.getElementById('fovv').textContent = FOV + '°';
+  document.getElementById('rngv').textContent = VIEW + 'px';
+};
+fov.addEventListener('input', () => { FOV = +fov.value; syncLabels(); clearCase(); render(); });
+rng.addEventListener('input', () => { VIEW = +rng.value; syncLabels(); clearCase(); render(); });
+
+syncLabels();
+document.querySelector('[data-case="0"]').classList.add('on');
+render();
+</script>
+</body>
+</html>
